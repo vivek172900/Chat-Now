@@ -4,452 +4,694 @@ const jsonwebtoken = require("jsonwebtoken");
 const cors = require("cors");
 const http = require("http");
 const socketIo = require("socket.io");
-const { v4: uuidv4 } = require("uuid")
+const { v4: uuidv4 } = require("uuid");
+require('dotenv').config();
 
 const app = express();
 const server = http.createServer(app);
 
+app.use(cors({
+  origin: "http://localhost:3000",
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true
+}));
+
 const io = socketIo(server, {
   cors: {
-    origin: "*", 
+    origin: "http://localhost:3000",
     methods: ["GET", "POST"],
     credentials: true
   }
 });
 
-
-// Imports
 require("./db/connection");
-const Users = require("./models/Users");
-const Roomids = require("./models/Roomids")
-const Conversation = require("./models/Conversation");
-const Message = require("./models/Messages")
 
-// Middleware
+const Users = require("./models/Users");
+const Roomids = require("./models/Roomids");
+const Conversation = require("./models/Conversation");
+const Message = require("./models/Messages");
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
-app.use(cors());
 
-// Routes
-app.get("/", (req, res) => {
-  res.send("Welcome to the Chatting App API");
-});
+const JWT_SECRET = process.env.JWT_SECRET_KEY || "fallback_secret_key_change_in_production";
 
-app.post("/api/register", async (req, res) => {
-  try {
-    const { Fullname, Username, email, password } = req.body;
-
-    if (!Fullname || !email || !password) {
-      return res.status(400).send("Please fill all required fields");
-    }
-
-
-    const isAlreadyExists = await Users.findOne({ email });
-    const isAlreadyExistsUsername = await Users.findOne({ Username });
-    if (isAlreadyExists) {
-      return res.status(201).json({ message: "User already exists" });
-    }
-    if (isAlreadyExistsUsername) {
-      return res.status(201).json({ message: "Username already taken" });
-    }
-
-    const hashedPassword = await bcryptjs.hash(password, 10);
-    const newUser = new Users({ Fullname, Username, email, password: hashedPassword });
-    await newUser.save();
-
-    res.status(201).json({ message: "User created successfully" });
-  } catch (error) {
-    console.error("Error registering user:", error);
-    res.status(500).json({ error: "Internal server error" });
+function getUserSettings(conversation, userId) {
+  if (!conversation.memberSettings || !Array.isArray(conversation.memberSettings)) {
+    return {
+      archived: false,
+      locked: false,
+      favorite: false
+    };
   }
+  
+  const userSetting = conversation.memberSettings.find(setting => setting.userId === userId);
+  
+  if (!userSetting) {
+    return {
+      archived: false,
+      locked: false,
+      favorite: false
+    };
+  }
+  
+  return {
+    archived: Boolean(userSetting.archived),
+    locked: Boolean(userSetting.locked),
+    favorite: Boolean(userSetting.favorite)
+  };
+}
+
+async function updateUserSettings(conversationId, userId, newSettings) {
+  const conversation = await Conversation.findOne({ Conversation_id: conversationId });
+  
+  if (!conversation) {
+    throw new Error("Conversation not found");
+  }
+  
+  let memberSettings = conversation.memberSettings || [];
+  
+  const existingIndex = memberSettings.findIndex(setting => setting.userId === userId);
+  
+  if (existingIndex >= 0) {
+    memberSettings[existingIndex] = {
+      ...memberSettings[existingIndex],
+      ...newSettings
+    };
+  } else {
+    memberSettings.push({
+      userId,
+      archived: newSettings.archived || false,
+      locked: newSettings.locked || false,
+      favorite: newSettings.favorite || false
+    });
+  }
+  
+  await Conversation.updateOne(
+    { Conversation_id: conversationId },
+    { $set: { memberSettings: memberSettings } }
+  );
+  
+  return memberSettings.find(setting => setting.userId === userId);
+}
+
+app.get("/", (req, res) => {
+  res.json({ 
+    message: "Welcome to the Chat App API", 
+    version: "1.0.0",
+    status: "active"
+  });
 });
 
-app.post("/api/login", async (req, res) => {
+
+app.get("/api/getConversationsWithMessages/:userid", async (req, res) => {
   try {
-    const { email, password } = req.body;
-
-    if (!email || !password) {
-      return res.status(201).json({ message: "Please fill all required fields" });
+    const { userid } = req.params;
+    const { filter = 'unarchived' } = req.query;
+    
+    if (!userid) {
+      return res.status(400).json({ message: "User ID is required" });
     }
 
-    const isAlreadyExists = await Users.findOne({ email });
-    if (!isAlreadyExists) {
-      return res.status(201).json({ message: "Email not found" });
+    const conversations = await Conversation.find({
+      members: { $in: [userid] }
+    }).lean();
+
+    if (conversations.length === 0) {
+      return res.status(200).json({
+        conversations: [],
+        filter: filter,
+        counts: {
+          total: 0,
+          unarchived: 0,
+          archived: 0,
+          favorites: 0,
+          locked: 0
+        }
+      });
     }
 
-    const validateUser = await bcryptjs.compare(password, isAlreadyExists.password);
-    if (!validateUser) {
-      return res.status(201).json({ message: "Invalid Password" });
+    const conversationsWithMessages = [];
+
+    for (const conversation of conversations) {
+      try {
+        const otherMemberId = conversation.members.find(member => member !== userid);
+        
+        if (!otherMemberId) {
+          continue;
+        }
+        
+        let otherMember = await Users.findOne({ email: otherMemberId }, {
+          Fullname: 1,
+          Username: 1,
+          avatar: 1,
+          State: 1,
+          email: 1
+        }).lean();
+
+        if (!otherMember) {
+          otherMember = {
+            Fullname: otherMemberId.split('@')[0],
+            Username: otherMemberId.split('@')[0],
+            email: otherMemberId,
+            avatar: "https://media.istockphoto.com/id/1300845620/vector/user-icon-flat-isolated-on-white-background-user-symbol-vector-illustration.jpg?s=612x612&w=0&k=20&c=yBeyba0hUkh14_jgv1OKqIH0CCSWU_4ckRkAoy2p73o=",
+            State: "Offline"
+          };
+        }
+
+        const totalMessages = await Message.countDocuments({
+          $or: [
+            { senderid: userid, receiverid: otherMemberId },
+            { senderid: otherMemberId, receiverid: userid }
+          ]
+        });
+
+        const unreadCount = await Message.countDocuments({
+          senderid: otherMemberId,
+          receiverid: userid,
+          msgRead: "no"
+        });
+
+        let latestMessage = null;
+        if (totalMessages > 0) {
+          latestMessage = await Message.findOne({
+            $or: [
+              { senderid: userid, receiverid: otherMemberId },
+              { senderid: otherMemberId, receiverid: userid }
+            ]
+          }).sort({ timestamp: -1 }).lean();
+        }
+
+        // Get user settings using helper function
+        const userSettings = getUserSettings(conversation, userid);
+
+        const conversationData = {
+          ...conversation,
+          otherMember,
+          latestMessage,
+          unreadCount,
+          totalMessages,
+          hasMessages: totalMessages > 0,
+          userSettings
+        };
+
+        conversationsWithMessages.push(conversationData);
+      } catch (error) {
+        console.error(`Error processing conversation:`, error);
+        continue;
+      }
     }
 
-    const jwtSecretKey = process.env.JWT_SECRET_KEY || "this_is_a_jwt_secrete_key";
-    const payload = {
-      userid: isAlreadyExists.id,
-      email: isAlreadyExists.email,
+    let filteredConversations;
+    
+    switch(filter.toLowerCase()) {
+      case 'archived':
+        filteredConversations = conversationsWithMessages.filter(
+          conv => conv.userSettings.archived === true
+        );
+        break;
+        
+      case 'favorites':
+        filteredConversations = conversationsWithMessages.filter(
+          conv => conv.userSettings.favorite === true
+        );
+        break;
+        
+      case 'locked':
+        filteredConversations = conversationsWithMessages.filter(
+          conv => conv.userSettings.locked === true
+        );
+        break;
+        
+      case 'unarchived':
+        filteredConversations = conversationsWithMessages.filter(
+          conv => conv.userSettings.archived === false
+        );
+        break;
+        
+      case 'all':
+        filteredConversations = conversationsWithMessages;
+        break;
+        
+      default:
+        filteredConversations = conversationsWithMessages.filter(
+          conv => conv.userSettings.archived === false
+        );
+    }
+
+    filteredConversations.sort((a, b) => {
+      if (a.latestMessage && b.latestMessage) {
+        return new Date(b.latestMessage.timestamp) - new Date(a.latestMessage.timestamp);
+      }
+      if (a.latestMessage && !b.latestMessage) return -1;
+      if (!a.latestMessage && b.latestMessage) return 1;
+      return 0;
+    });
+
+    const counts = {
+      total: conversationsWithMessages.length,
+      unarchived: conversationsWithMessages.filter(c => c.userSettings.archived === false).length,
+      archived: conversationsWithMessages.filter(c => c.userSettings.archived === true).length,
+      favorites: conversationsWithMessages.filter(c => c.userSettings.favorite === true).length,
+      locked: conversationsWithMessages.filter(c => c.userSettings.locked === true).length
     };
 
-    jsonwebtoken.sign(payload, jwtSecretKey, { expiresIn: 84600 }, async (err, token) => {
-      if (err) {
-        return res.status(500).send("Error generating token");
+    res.status(200).json({
+      conversations: filteredConversations,
+      filter: filter,
+      counts: counts
+    });
+  } catch (error) {
+    console.error("Error fetching conversations with messages:", error);
+    res.status(500).json({ message: "Error fetching conversations with messages" });
+  }
+});
+
+
+app.post("/api/updateConversationSettings", async (req, res) => {
+  try {
+    const { conversationId, userId, settings } = req.body;
+    
+    console.log("Updating conversation settings:", { conversationId, userId, settings });
+    
+    if (!conversationId || !userId || !settings) {
+      return res.status(400).json({ 
+        message: "Conversation ID, User ID, and settings are required" 
+      });
+    }
+
+    const conversation = await Conversation.findOne({ Conversation_id: conversationId });
+    if (!conversation) {
+      return res.status(404).json({ message: "Conversation not found" });
+    }
+
+    if (!conversation.members.includes(userId)) {
+      return res.status(403).json({ message: "User is not a member of this conversation" });
+    }
+
+    // Use the helper function to update settings
+    const updatedSettings = await updateUserSettings(conversationId, userId, settings);
+
+    res.status(200).json({ 
+      success: true,
+      message: "Conversation settings updated",
+      userId,
+      conversationId,
+      settings: updatedSettings
+    });
+  } catch (error) {
+    console.error("Error updating conversation settings:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+app.get("/api/getConversation/:conversationId/:userId", async (req, res) => {
+  try {
+    const { conversationId, userId } = req.params;
+    
+    if (!conversationId || !userId) {
+      return res.status(400).json({ message: "Conversation ID and User ID are required" });
+    }
+
+    const conversation = await Conversation.findOne({ Conversation_id: conversationId });
+    if (!conversation) {
+      return res.status(404).json({ message: "Conversation not found" });
+    }
+
+    const userSettings = getUserSettings(conversation, userId);
+
+    const otherMemberId = conversation.members.find(member => member !== userId);
+    const otherMember = await Users.findOne({ email: otherMemberId }, {
+      Fullname: 1,
+      Username: 1,
+      avatar: 1,
+      State: 1,
+      email: 1
+    }).lean();
+
+    const unreadCount = await Message.countDocuments({
+      senderid: otherMemberId,
+      receiverid: userId,
+      msgRead: "no"
+    });
+
+    const totalMessages = await Message.countDocuments({
+      $or: [
+        { senderid: userId, receiverid: otherMemberId },
+        { senderid: otherMemberId, receiverid: userId }
+      ]
+    });
+
+    res.status(200).json({
+      ...conversation.toObject(),
+      otherMember,
+      userSettings,
+      unreadCount,
+      totalMessages
+    });
+  } catch (error) {
+    console.error("Error getting conversation:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+app.post("/api/batchUpdateConversations", async (req, res) => {
+  try {
+    const { userId, updates } = req.body;
+    
+    if (!userId || !updates || !Array.isArray(updates)) {
+      return res.status(400).json({ 
+        message: "User ID and updates array are required" 
+      });
+    }
+
+    const results = [];
+    
+    for (const update of updates) {
+      const { conversationId, settings } = update;
+      
+      const conversation = await Conversation.findOne({ Conversation_id: conversationId });
+      if (conversation && conversation.members.includes(userId)) {
+        const updatedSettings = await updateUserSettings(conversationId, userId, settings);
+        
+        results.push({
+          conversationId,
+          success: true,
+          settings: updatedSettings
+        });
+      } else {
+        results.push({
+          conversationId,
+          success: false,
+          error: "Conversation not found or user is not a member"
+        });
       }
+    }
+
+    res.status(200).json({ 
+      success: true,
+      results 
+    });
+  } catch (error) {
+    console.error("Error batch updating conversations:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+app.post("/api/resetConversationSettings", async (req, res) => {
+  try {
+    const { conversationId, userId } = req.body;
+    
+    if (!conversationId || !userId) {
+      return res.status(400).json({ 
+        message: "Conversation ID and User ID are required" 
+      });
+    }
+
+    const conversation = await Conversation.findOne({ Conversation_id: conversationId });
+    if (!conversation) {
+      return res.status(404).json({ message: "Conversation not found" });
+    }
+
+    // Reset to default settings
+    const resetSettings = {
+      archived: false,
+      locked: false,
+      favorite: false
+    };
+
+    const updatedSettings = await updateUserSettings(conversationId, userId, resetSettings);
+
+    res.status(200).json({ 
+      success: true,
+      message: "Conversation settings reset to default",
+      userId,
+      conversationId,
+      settings: updatedSettings
+    });
+  } catch (error) {
+    console.error("Error resetting conversation settings:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+app.get("/api/getUserSettings/:conversationId/:userId", async (req, res) => {
+  try {
+    const { conversationId, userId } = req.params;
+    
+    if (!conversationId || !userId) {
+      return res.status(400).json({ 
+        message: "Conversation ID and User ID are required" 
+      });
+    }
+
+    const conversation = await Conversation.findOne({ Conversation_id: conversationId });
+    if (!conversation) {
+      return res.status(404).json({ 
+        success: false,
+        message: "Conversation not found",
+        settings: {
+          archived: false,
+          locked: false,
+          favorite: false
+        }
+      });
+    }
+
+    // Get user settings using helper function
+    const userSettings = getUserSettings(conversation, userId);
+
+    res.status(200).json({
+      success: true,
+      conversationId,
+      userId,
+      settings: userSettings
+    });
+  } catch (error) {
+    console.error("Error getting user settings:", error);
+    res.status(500).json({ 
+      success: false,
+      message: "Internal server error",
+      settings: {
+        archived: false,
+        locked: false,
+        favorite: false
+      }
+    });
+  }
+});
+
+app.post("/api/migrateToNewFormat", async (req, res) => {
+  try {
+    const conversations = await Conversation.find({}).lean();
+    let migratedCount = 0;
+    
+    for (const conversation of conversations) {
+      if (conversation.memberSettings) {
+        let memberSettings = conversation.memberSettings;
+        let newSettingsArray = [];
+        
+        // If it's a Map, convert to object
+        if (memberSettings instanceof Map) {
+          const plainObj = {};
+          for (const [key, value] of memberSettings.entries()) {
+            plainObj[key] = value;
+          }
+          memberSettings = plainObj;
+        }
+        
+        // If it's an object with email keys, convert to array
+        if (typeof memberSettings === 'object' && !Array.isArray(memberSettings)) {
+          for (const [userId, settings] of Object.entries(memberSettings)) {
+            newSettingsArray.push({
+              userId: userId,
+              archived: Boolean(settings.archived),
+              locked: Boolean(settings.locked),
+              favorite: Boolean(settings.favorite)
+            });
+          }
+          
+          await Conversation.updateOne(
+            { Conversation_id: conversation.Conversation_id },
+            { $set: { memberSettings: newSettingsArray } }
+          );
+          
+          migratedCount++;
+        }
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Migrated ${migratedCount} conversations to new format`,
+      total: conversations.length,
+      migrated: migratedCount
+    });
+  } catch (error) {
+    console.error("Error migrating conversations:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+
+const users_sockets = new Map();
+const socket_users = new Map();
+
+io.on("connection", (socket) => {
+  console.log(`✅ User connected: ${socket.id}`);
+
+  socket.on("register", async (userid) => {
+    try {
+      if (!userid) {
+        socket.emit("error", { message: "User ID is required for registration" });
+        return;
+      }
+
+      if (users_sockets.has(userid)) {
+        const oldSocketId = users_sockets.get(userid);
+        socket_users.delete(oldSocketId);
+      }
+
+      users_sockets.set(userid, socket.id);
+      socket_users.set(socket.id, userid);
 
       await Users.updateOne(
-        { _id: isAlreadyExists.id },
-        { $set: { token } }
+        { email: userid },
+        { 
+          $set: { 
+            State: "Online",
+            lastSeen: new Date()
+          } 
+        }
       );
-      isAlreadyExists.save();
-      res.status(200).json({ user: isAlreadyExists, token });
-    });
-  } catch (error) {
-    console.error("Error logging in:", error);
-    res.status(500).send("Internal server error");
-  }
-});
 
-app.get("/api/allusers", async (req, res) => {
-  try {
-    const users = await Users.find();
-    const usersData = await Promise.all(users.map(async (user) => {
-      return { user: { email: user.email, Username: user.Username, Fullname: user.Fullname, avatar: user.avatar }, userid: user.userid };
-    }));
-    res.status(200).json(usersData);
-  } catch (error) {
-    console.log(error);
-    res.status(500).send("Error fetching users");
-  }
-});
+      socket.broadcast.emit("userStatusUpdate", {
+        userid: userid,
+        status: "Online",
+        lastSeen: new Date()
+      });
 
-app.post("/api/RegisterRoom", async (req, res) => {
-  console.log("register room")
-  const { roomid } = req.body;
-  console.log(roomid)
-  const newroomid = new Roomids({ roomid });
-  await newroomid.save();
-  // roomid_r.save();
-  return res.status(200).send(newroomid)
-})
-
-app.get("/api/seeRooms", async (req, res) => {
-  console.log("see available rooms")
-  const Allroomids = await Roomids.find()
-  console.log(Allroomids);
-  return res.status(200).send(Allroomids);
-})
-
-app.post("/api/createConversation", async (req, res) => {
-  const { senderid, receiverid } = req.body;
-  if (senderid === receiverid) {
-    return res.status(400).json({ message: "Cannot create a conversation with the same user." });
-  }
-
-  try {
-    console.log("Creating conversation...");
-    const existingConversation = await Conversation.findOne({
-      members: { $all: [senderid, receiverid] },
-    });
-    if (existingConversation) {
-      return res.status(400).json({ message: "Conversation already exists between these users." });
+      socket.emit("registered", { message: "Successfully registered", userid });
+      console.log(`👤 User ${userid} registered with socket ID: ${socket.id}`);
+    } catch (error) {
+      console.error("Error registering user:", error);
+      socket.emit("error", { message: "Registration failed" });
     }
-    const conversationId = uuidv4();
-    const newConversation = new Conversation({
-      Conversation_id: conversationId,
-      members: [senderid, receiverid],
-    });
-    await newConversation.save();
-    return res.status(200).json(newConversation);
-  } catch (error) {
-    console.error("Error creating conversation:", error);
-    return res.status(500).json({ message: "Internal server error" });
-  }
-});
-
-
-app.get("/api/getConversations", async (req, res) => {
-  const allConversations = await Conversation.find()
-  return res.status(200).send(allConversations);
-})
-app.post("/api/getLastMessage", async (req, res) => {
-  try {
-    const { user1, user2 } = req.body;
-    const message = await Message.findOne({
-      $or: [
-        { senderid: user1, receiverid: user2 },
-        { senderid: user2, receiverid: user1 }
-      ]
-    }).sort({ timestamp: -1 });
-
-    if (!message) {
-      return res.status(404).json({ error: "No messages found" });
-    }
-    const sender = await Users.findOne({ email: message.senderid });
-
-    res.status(200).json({
-      message,
-      senderUsername: sender ? sender.Username : null
-    });
-
-  } catch (error) {
-    console.error("Error fetching last message:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-app.put("/api/UpdateMsgRead", async (req, res) => {
-  try {
-    const { user1, user2, read } = req.body;
-    const messageUpdate = await Message.updateMany(
-      {
-        $or: [
-          { senderid: user1, receiverid: user2 },
-          { senderid: user2, receiverid: user1 }
-        ]
-      },
-      { $set: { msgRead: read } }
-    );
-
-    const message2 = await Message.find({
-      $or: [
-        { senderid: user1, receiverid: user2 },
-        { senderid: user2, receiverid: user1 }
-      ]
-    });
-
-    const sender = await Users.findOne({ email: messageUpdate.senderid });
-
-    res.status(200).json({
-      message2,
-      senderUsername: sender ? sender.Username : null
-    });
-
-  } catch (error) {
-    console.error("Error fetching last message:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-app.post("/api/getmessage", async (req, res) => {
-  const { senderid, receiverid } = req.body;
-  const message = await Message.find({
-    $or: [
-      { senderid: senderid, receiverid: receiverid },
-      { senderid: receiverid, receiverid: senderid }
-    ]
-  }).sort({ timestamp: 1 });
-  // console.log(message)
-  res.status(201).json(message)
-})
-
-app.put("/api/setAvatar", async (req, res) => {
-  const { email, avatarnew } = req.body;
-  try {
-    const avatarUpdate = await Users.updateOne(
-      { email: email },
-      { $set: { avatar: avatarnew } }
-    );
-    // console.log(avatarUpdate);
-    res.status(200).json({
-      message: "Avatar updated successfully",
-      email: email,
-      newAvatar: avatarnew
-    });
-  } catch (error) {
-    console.error("Error updating avatar:", error);
-    res.status(500).json({ message: "Internal Server Error" });
-  }
-});
-
-app.post("/api/getAvatar", async (req, res) => {
-  const { email } = req.body;
-  try {
-    const avatarnew = await Users.find({
-      email: email
-    })
-    res.status(201).json(avatarnew);
-  } catch (error) {
-    console.log("User not found")
-    res.status(201).json({ message: "user not found" })
-  }
-})
-
-app.post("/api/archive", async (req, res) => {
-  const { user1, user2, archived } = req.body;
-
-  try {
-    const updatedConversation = await Conversation.updateOne(
-      { members: { $all: [user1, user2] } }, // Find conversation with both users
-      {
-        $set: {
-          favorate: !archived, 
-          locked: !archived,  
-          archived: archived 
-        }
-      }
-    );
-
-    res.status(201).json(updatedConversation);
-  } catch (error) {
-    console.log("Error updating conversation:", error.message);
-    res.status(500).json({ message: error.message });
-  }
-});
-
-app.post("/api/favorate", async (req, res) => {
-  const { user1, user2, favorate } = req.body;
-
-  try {
-    const updatedConversation = await Conversation.updateOne(
-      { members: { $all: [user1, user2] } },
-      {
-        $set: {
-          favorate: favorate,
-          locked: !favorate,  
-          archived: !favorate  
-        }
-      }
-    );
-
-    res.status(201).json(updatedConversation);
-  } catch (error) {
-    console.log("Error updating conversation:", error.message);
-    res.status(500).json({ message: error.message });
-  }
-});
-
-app.post("/api/lock", async (req, res) => {
-  const { user1, user2, lock } = req.body;
-
-  try {
-    const updatedConversation = await Conversation.updateOne(
-      { members: { $all: [user1, user2] } },
-      {
-        $set: {
-          favorate: !lock,
-          locked: lock,
-          archived: !lock  
-        }
-      }
-    );
-
-    res.status(201).json(updatedConversation);
-  } catch (error) {
-    console.log("Error updating conversation:", error.message);
-    res.status(500).json({ message: error.message });
-  }
-});
-
-
-
-app.delete("/api/clearConversation", async (req, res) => {
-  try {
-    const { user1, user2 } = req.body;
-
-    if (!user1 || !user2) {
-      return res.status(400).json({ message: "Both user1 and user2 are required" });
-    }
-
-    const conv = await Conversation.deleteOne({
-      members: { $all: [user1, user2] }
   });
-    
-
-    const messages = await Message.deleteMany({
-      $or: [
-        { senderid: user1, receiverid: user2 },
-        { senderid: user2, receiverid: user1 }
-      ]
-    });
-
-    res.status(200).json({
-      message: "Conversation and messages deleted successfully",
-      deletedConversation: conv.deletedCount,
-      deletedMessages: messages.deletedCount
-    });
-  } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
-  }
-});
-
-
-app.post("/api/setCallingId", async (req, res) => {
-  const { email, callingId } = req.body;
-  try {
-    const callingIdUpdate = await Users.updateOne(
-      { email: email },
-      { $set: { callingId } }
-    )
-    res.status(201).json({
-      message: "CallingId updated successfully",
-      email: email,
-      callingId: callingId
-    });
-  } catch (error) {
-    console.error("Error updating callingId:", error);
-    res.status(500).json({ message: "Internal Server Error" });
-  }
-})
-app.post("/api/getCallingId", async (req, res) => {
-  const { email } = req.body;
-
-  try {
-    const user = await Users.findOne({ email }).lean();
-
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    res.status(200).json({ callingId: user.callingId });
-  } catch (error) {
-    console.error("Error fetching callingId:", error);
-    res.status(500).json({ message: "Internal Server Error" });
-  }
-});
-
-
-app.delete("/api/clearChat", async (req, res) => {
-  const { user1, user2 } = req.body;
-  const messages = await Message.deleteMany({
-    $or: [
-      { senderid: user1, receiverid: user2 },
-      { senderid: user2, receiverid: user1 }
-    ]
-  });
-  res.status(200).json({
-    messages,
-  });
-
-})
-
-const users_sockets = {}
-io.on("connection", (socket) => {
-  // console.log("A user connected", socket.id);
-
-  socket.on("register", (userid) => {
-    users_sockets[userid] = socket.id;
-    // console.log(`User ${userid} registered with socket ID: ${socket.id}`);
-  })
 
   socket.on("sendone2oneMSG", async ({ senderid, receiverid, message }) => {
-    // console.log("sending to ",users_sockets[receiverid],"by ",senderid)
-    const newMessage = new Message({
-      senderid: senderid,
-      receiverid: receiverid,
-      message: message
-    })
     try {
-      await newMessage.save()
-    } catch (error) {
-      console.log("en error has occured in sending the message")
-    }
-    socket.broadcast.to(users_sockets[receiverid]).emit("receiveone2one", { sender: socket.id, message, senderid })
-    // console.log(`Message sent to ${receiverid} from ${senderid}`)
-  })
+      if (!senderid || !receiverid || !message) {
+        socket.emit("error", { message: "Sender ID, Receiver ID, and message are required" });
+        return;
+      }
 
-  socket.on("disconnect", () => {
-    console.log("A user disconnected", socket.id);
+      if (message.trim().length === 0) {
+        socket.emit("error", { message: "Message cannot be empty" });
+        return;
+      }
+
+      const newMessage = new Message({
+        senderid: senderid,
+        receiverid: receiverid,
+        message: message.trim()
+      });
+
+      await newMessage.save();
+
+      const receiverSocketId = users_sockets.get(receiverid);
+      if (receiverSocketId) {
+        io.to(receiverSocketId).emit("receiveone2one", {
+          sender: socket.id,
+          message: message.trim(),
+          senderid,
+          timestamp: newMessage.timestamp,
+          messageId: newMessage._id
+        });
+      }
+
+      socket.emit("messageSent", {
+        messageId: newMessage._id,
+        timestamp: newMessage.timestamp,
+        status: receiverSocketId ? "delivered" : "sent"
+      });
+
+      console.log(`💬 Message sent from ${senderid} to ${receiverid}`);
+    } catch (error) {
+      console.error("Error sending message:", error);
+      socket.emit("error", { message: "Failed to send message" });
+    }
+  });
+
+  socket.on("messageRead", async ({ senderid, receiverid }) => {
+    try {
+      if (!senderid || !receiverid) {
+        return;
+      }
+
+      await Message.updateMany(
+        { senderid: receiverid, receiverid: senderid, msgRead: "no" },
+        { $set: { msgRead: "yes" } }
+      );
+
+      const senderSocketId = users_sockets.get(receiverid);
+      if (senderSocketId) {
+        io.to(senderSocketId).emit("messagesRead", {
+          receiverid: senderid
+        });
+      }
+    } catch (error) {
+      console.error("Error marking messages as read via socket:", error);
+    }
+  });
+
+  socket.on("disconnect", async () => {
+    try {
+      const userid = socket_users.get(socket.id);
+      
+      if (userid) {
+        await Users.updateOne(
+          { email: userid },
+          { 
+            $set: { 
+              State: "Offline",
+              lastSeen: new Date()
+            } 
+          }
+        );
+
+        socket.broadcast.emit("userStatusUpdate", {
+          userid: userid,
+          status: "Offline",
+          lastSeen: new Date()
+        });
+
+        users_sockets.delete(userid);
+        socket_users.delete(socket.id);
+
+        console.log(`❌ User ${userid} disconnected (${socket.id})`);
+      } else {
+        console.log(`❌ Unknown user disconnected (${socket.id})`);
+      }
+    } catch (error) {
+      console.error("Error handling disconnect:", error);
+    }
   });
 });
 
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({ message: 'Internal server error' });
+});
 
-server.listen(9000, () => {
-  console.log("Server is running on port 9000");
+app.use('*', (req, res) => {
+  res.status(404).json({ message: 'Route not found' });
+});
+
+const PORT = process.env.PORT || 9000;
+server.listen(PORT, () => {
+  console.log(`🚀 Server is running on port ${PORT}`);
+  console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`📊 Database: Local MongoDB`);
+  console.log(`🔧 New: Using array-based memberSettings format`);
 });

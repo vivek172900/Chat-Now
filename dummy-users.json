@@ -1,0 +1,62 @@
+[
+    {
+        "Fullname": "Alice Johnson",
+        "Username": "alice_j",
+        "email": "alice.johnson@example.com",
+        "password": "password123"
+    },
+    {
+        "Fullname": "Bob Smith",
+        "Username": "bob_smith",
+        "email": "bob.smith@example.com",
+        "password": "password123"
+    },
+    {
+        "Fullname": "Charlie Brown",
+        "Username": "charlie_b",
+        "email": "charlie.brown@example.com",
+        "password": "password123"
+    },
+    {
+        "Fullname": "Diana Prince",
+        "Username": "diana_p",
+        "email": "diana.prince@example.com",
+        "password": "password123"
+    },
+    {
+        "Fullname": "Ethan Hunt",
+        "Username": "ethan_h",
+        "email": "ethan.hunt@example.com",
+        "password": "password123"
+    },
+    {
+        "Fullname": "Fiona Green",
+        "Username": "fiona_g",
+        "email": "fiona.green@example.com",
+        "password": "password123"
+    },
+    {
+        "Fullname": "George Wilson",
+        "Username": "george_w",
+        "email": "george.wilson@example.com",
+        "password": "password123"
+    },
+    {
+        "Fullname": "Hannah Davis",
+        "Username": "hannah_d",
+        "email": "hannah.davis@example.com",
+        "password": "password123"
+    },
+    {
+        "Fullname": "Ian Mitchell",
+        "Username": "ian_m",
+        "email": "ian.mitchell@example.com",
+        "password": "password123"
+    },
+    {
+        "Fullname": "Julia Roberts",
+        "Username": "julia_r",
+        "email": "julia.roberts@example.com",
+        "password": "password123"
+    }
+]

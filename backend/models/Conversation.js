@@ -1,29 +1,37 @@
-const mongoose = require("mongoose")
+const mongoose = require('mongoose');
 
-const Conversactionschema = mongoose.Schema({
-    Conversation_id: {
-        type: String,
-        required: true
+const ConversationSchema = new mongoose.Schema({
+  Conversation_id: {
+    type: String,
+    required: true,
+    unique: true
+  },
+  members: {
+    type: [String],
+    required: true
+  },
+  memberSettings: [{
+    userId: {
+      type: String,
+      required: true
     },
-    members: {
-        type: Array,
-        required: true
+    archived: {
+      type: Boolean,
+      default: false
     },
-    favorate:{
-        type:Boolean,
-        default:false
+    locked: {
+      type: Boolean,
+      default: false
     },
-    locked:{
-        type:Boolean,
-        default:false
-    },
-    archived:{
-        type:Boolean,
-        default:false
-    },
+    favorite: {
+      type: Boolean,
+      default: false
+    }
+  }]
+}, {
+  timestamps: true
+});
 
-})
+ConversationSchema.index({ 'memberSettings.userId': 1 });
 
-const Conversation = mongoose.model("Conversaction", Conversactionschema)
-
-module.exports = Conversation;
+module.exports = mongoose.model('Conversation', ConversationSchema);
