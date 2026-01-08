@@ -10,7 +10,6 @@ export const initializeSocket = async () => {
     return null;
   }
 
-  // Disconnect existing socket if any
   if (socket) {
     socket.disconnect();
     socket = null;
@@ -38,9 +37,7 @@ export const initializeSocket = async () => {
     socket.on('disconnect', (reason) => {
       console.log('🔌 Socket disconnected:', reason);
       
-      // Attempt to reconnect if disconnected unexpectedly
       if (reason === 'io server disconnect') {
-        // The server disconnected, try to reconnect manually
         socket.connect();
       }
     });
@@ -76,69 +73,6 @@ export const disconnectSocket = () => {
     socket = null;
     console.log('Socket disconnected manually');
   }
-};
-
-export const setupSocketListeners = (socket, callbacks) => {
-  const {
-    onNewMessage,
-    onMessageRead,
-    onTyping,
-    onUserStatusChange,
-    onCallInitiated,
-    onCallAccepted,
-    onCallEnded,
-    onError,
-  } = callbacks;
-
-  socket.on('new_message', (data) => {
-    console.log('📩 New message event:', data);
-    onNewMessage?.(data);
-  });
-
-  socket.on('message_read', (data) => {
-    console.log('✓ Message read event:', data);
-    onMessageRead?.(data);
-  });
-
-  socket.on('typing_indicator', (data) => {
-    console.log('⌨️ Typing indicator:', data);
-    onTyping?.(data);
-  });
-
-  socket.on('user_status_change', (data) => {
-    console.log('👤 User status change:', data);
-    onUserStatusChange?.(data);
-  });
-
-  socket.on('incoming_call', (data) => {
-    console.log('📞 Incoming call:', data);
-    onCallInitiated?.(data);
-  });
-
-  socket.on('call_accepted', (data) => {
-    console.log('✅ Call accepted:', data);
-    onCallAccepted?.(data);
-  });
-
-  socket.on('call_ended', (data) => {
-    console.log('📴 Call ended:', data);
-    onCallEnded?.(data);
-  });
-
-  socket.on('message_notification', (data) => {
-    console.log('🔔 Message notification:', data);
-    onNewMessage?.(data);
-  });
-
-  socket.on('message_error', (error) => {
-    console.error('❌ Message error:', error);
-    onError?.(error);
-  });
-
-  socket.on('error', (error) => {
-    console.error('❌ Socket error:', error);
-    onError?.(error);
-  });
 };
 
 export const socketEmit = {

@@ -8,7 +8,7 @@ export const useChat = () => {
   const [chats, setChats] = useState([]);
   const [users, setUsers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedChat, setSelectedChatState] = useState(null);
+  const [selectedChat, setSelectedChat] = useState(null);
   const [activeTab, setActiveTab] = useState('chats');
   const [socket, setSocket] = useState(null);
   const [typingUsers, setTypingUsers] = useState({});
@@ -29,7 +29,118 @@ export const useChat = () => {
           try {
             const socketInstance = await initializeSocket();
             setSocket(socketInstance);
-            console.log('Socket initialized successfully');
+            
+            socketInstance.on('new_message', (data) => {
+              if (selectedChat && data.chatId === selectedChat._id) {
+                setMessages(prev => {
+                  const exists = prev.some(msg => msg._id === data.message._id);
+                  if (exists) return prev;
+                  return [...prev, data.message];
+                });
+                scrollToBottom();
+              }
+              
+              setChats(prev => prev.map(chat => {
+                if (chat._id === data.chatId) {
+                  return {
+                    ...chat,
+                    latestMessage: data.message,
+                    unreadCount: chat._id === selectedChat?._id ? 0 : (chat.unreadCount || 0) + 1,
+                    updatedAt: new Date().toISOString()
+                  };
+                }
+                return chat;
+              }));
+            });
+
+            socketInstance.on('message_sent', (data) => {
+              setMessages(prev => prev.map(msg => 
+                msg._id?.includes('temp-') && data.message.sender?._id === currentUser?._id
+                  ? data.message
+                  : msg
+              ));
+              
+              setChats(prev => prev.map(chat => {
+                if (chat._id === data.chatId) {
+                  return {
+                    ...chat,
+                    latestMessage: data.message,
+                    updatedAt: new Date().toISOString()
+                  };
+                }
+                return chat;
+              }));
+            });
+
+            socketInstance.on('message_read', (data) => {
+              setMessages(prev => prev.map(msg => 
+                msg._id === data.messageId 
+                  ? { 
+                      ...msg, 
+                      status: data.status,
+                      readBy: [...(msg.readBy || []).filter(r => r.user !== data.readBy), { 
+                        user: data.readBy, 
+                        readAt: new Date() 
+                      }]
+                    }
+                  : msg
+              ));
+            });
+
+            socketInstance.on('typing_indicator', (data) => {
+              setTypingUsers(prev => ({
+                ...prev,
+                [data.chatId]: {
+                  ...prev[data.chatId],
+                  [data.userId]: data.isTyping ? data.timestamp : null
+                }
+              }));
+              
+              if (data.isTyping) {
+                setTimeout(() => {
+                  setTypingUsers(prev => {
+                    const chatTyping = { ...prev[data.chatId] };
+                    delete chatTyping[data.userId];
+                    return {
+                      ...prev,
+                      [data.chatId]: chatTyping
+                    };
+                  });
+                }, 3000);
+              }
+            });
+
+            socketInstance.on('user_status_change', (data) => {
+              setUsers(prev => prev.map(user => 
+                user._id === data.userId 
+                  ? { ...user, isOnline: data.isOnline, lastSeen: data.lastSeen }
+                  : user
+              ));
+              
+              setChats(prev => prev.map(chat => ({
+                ...chat,
+                participants: chat.participants.map(participant => 
+                  participant._id === data.userId
+                    ? { ...participant, isOnline: data.isOnline, lastSeen: data.lastSeen }
+                    : participant
+                )
+              })));
+            });
+
+            socketInstance.on('message_notification', (data) => {
+              setChats(prev => prev.map(chat => {
+                if (chat._id === data.chatId) {
+                  return {
+                    ...chat,
+                    latestMessage: data.message,
+                    unreadCount: (chat.unreadCount || 0) + 1,
+                    updatedAt: new Date().toISOString()
+                  };
+                }
+                return chat;
+              }));
+            });
+
           } catch (error) {
             console.error('Failed to initialize socket:', error);
           }
@@ -45,115 +156,29 @@ export const useChat = () => {
   }, []);
 
   useEffect(() => {
-    if (!socket || !currentUser) return;
-
-    const handleNewMessage = (data) => {
-      if (selectedChat && data.chatId === selectedChat._id) {
-        setMessages(prev => {
-          const exists = prev.some(msg => msg._id === data.message._id);
-          if (exists) return prev;
-          
-          const updated = [...prev, data.message];
-          
-          if (data.message.sender && data.message.sender._id !== currentUser._id) {
-            setTimeout(() => {
-              markMessageAsRead(data.message._id);
-            }, 500);
-          }
-          
-          return updated;
-        });
-        scrollToBottom();
-      }
-      
-      setChats(prev => {
-        const updated = prev.map(chat => {
-          if (chat._id === data.chatId) {
-            return {
-              ...chat,
-              latestMessage: data.message,
-              unreadCount: (selectedChat?._id === data.chatId || (data.message.sender && data.message.sender._id === currentUser._id)) 
-                ? 0 
-                : (chat.unreadCount || 0) + 1,
-              updatedAt: new Date().toISOString()
-            };
-          }
-          return chat;
-        });
-        
-        return updated.sort((a, b) => 
-          new Date(b.updatedAt) - new Date(a.updatedAt)
+    if (selectedChat && messages.length > 0 && currentUser) {
+      const markMessagesAsRead = async () => {
+        const unreadMessages = messages.filter(msg => 
+          msg.sender && msg.sender._id !== currentUser._id && 
+          (!msg.readBy || !msg.readBy.some(read => 
+            read.user === currentUser._id || read.user?._id === currentUser._id
+          ))
         );
-      });
-    };
-
-    const handleMessageRead = (data) => {
-      setMessages(prev => prev.map(msg => 
-        msg._id === data.messageId 
-          ? { 
-              ...msg, 
-              status: data.status,
-              readBy: [...(msg.readBy || []).filter(r => r.user !== data.readBy), { 
-                user: data.readBy, 
-                readAt: new Date() 
-              }]
-            }
-          : msg
-      ));
-    };
-
-    const handleTyping = (data) => {
-      setTypingUsers(prev => ({
-        ...prev,
-        [data.chatId]: {
-          ...prev[data.chatId],
-          [data.userId]: data.isTyping ? data.timestamp : null
+        
+        for (const msg of unreadMessages) {
+          await markMessageAsRead(msg._id);
         }
-      }));
+        
+        setChats(prev => prev.map(chat => 
+          chat._id === selectedChat._id 
+            ? { ...chat, unreadCount: 0 }
+            : chat
+        ));
+      };
       
-      if (data.isTyping) {
-        setTimeout(() => {
-          setTypingUsers(prev => {
-            const chatTyping = { ...prev[data.chatId] };
-            delete chatTyping[data.userId];
-            return {
-              ...prev,
-              [data.chatId]: chatTyping
-            };
-          });
-        }, 3000);
-      }
-    };
-
-    const handleUserStatusChange = (data) => {
-      setUsers(prev => prev.map(user => 
-        user._id === data.userId 
-          ? { ...user, isOnline: data.isOnline, lastSeen: data.lastSeen }
-          : user
-      ));
-      
-      setChats(prev => prev.map(chat => ({
-        ...chat,
-        participants: chat.participants.map(participant => 
-          participant._id === data.userId
-            ? { ...participant, isOnline: data.isOnline, lastSeen: data.lastSeen }
-            : participant
-        )
-      })));
-    };
-
-    socket.on('new_message', handleNewMessage);
-    socket.on('message_read', handleMessageRead);
-    socket.on('typing_indicator', handleTyping);
-    socket.on('user_status_change', handleUserStatusChange);
-
-    return () => {
-      socket.off('new_message', handleNewMessage);
-      socket.off('message_read', handleMessageRead);
-      socket.off('typing_indicator', handleTyping);
-      socket.off('user_status_change', handleUserStatusChange);
-    };
-  }, [socket, selectedChat, currentUser]);
+      markMessagesAsRead();
+    }
+  }, [selectedChat, messages, currentUser]);
 
   const fetchCurrentUser = useCallback(async () => {
     try {
@@ -226,62 +251,6 @@ export const useChat = () => {
     return null;
   }, []);
 
-  const markMessageAsRead = useCallback(async (messageId) => {
-    try {
-      if (socket) {
-        socketEmit.markAsRead(socket, messageId);
-      }
-      await messageAPI.markAsRead(messageId);
-    } catch (error) {
-      console.error('Error marking message as read:', error);
-    }
-  }, [socket]);
-
-  const markAllMessagesAsRead = useCallback(async (chatId) => {
-    try {
-      if (socket) {
-        socketEmit.markAllAsRead(socket, chatId);
-      }
-      
-      setMessages(prev => prev.map(msg => ({
-        ...msg,
-        status: 'seen',
-        readBy: msg.readBy?.some(read => 
-          read.user?._id === currentUser?._id || read.user === currentUser?._id
-        ) 
-          ? msg.readBy 
-          : [...(msg.readBy || []), { 
-              user: currentUser, 
-              readAt: new Date().toISOString() 
-            }]
-      })));
-      
-      setChats(prev => prev.map(chat => 
-        chat._id === chatId 
-          ? { ...chat, unreadCount: 0 }
-          : chat
-      ));
-      
-      return true;
-    } catch (error) {
-      console.error('Error marking all messages as read:', error);
-      return false;
-    }
-  }, [socket, currentUser]);
-
-  const handleSelectChat = useCallback(async (chat) => {
-    if (!chat || !chat._id) return;
-    
-    setSelectedChatState(chat);
-    await fetchMessages(chat._id);
-    
-    if (chat.unreadCount > 0) {
-      await markAllMessagesAsRead(chat._id);
-    }
-    
-    scrollToBottom();
-  }, [fetchMessages, markAllMessagesAsRead]);
-
   const sendMessage = useCallback(async (chatId, content, messageType = 'text', mediaUrl = null) => {
     if (!content.trim() && !mediaUrl) return;
 
@@ -294,7 +263,8 @@ export const useChat = () => {
       mediaUrl,
       sender: currentUser,
       createdAt: new Date().toISOString(),
-      status: 'sending'
+      status: 'sending',
+      readBy: [{ user: currentUser, readAt: new Date().toISOString() }]
     };
 
     setMessages(prev => [...prev, tempMessage]);
@@ -323,9 +293,9 @@ export const useChat = () => {
             : chat
         ));
         
-        if (socket) {
-          socketEmit.sendMessage(socket, realMessage);
-        }
+        // if (socket) {
+        //   socketEmit.sendMessage(socket, realMessage);
+        // }
         
         scrollToBottom();
         return realMessage;
@@ -339,6 +309,17 @@ export const useChat = () => {
     return null;
   }, [socket, currentUser]);
 
+  const markMessageAsRead = useCallback(async (messageId) => {
+    try {
+      if (socket) {
+        socketEmit.markAsRead(socket, messageId);
+      }
+      await messageAPI.markAsRead(messageId);
+    } catch (error) {
+      console.error('Error marking message as read:', error);
+    }
+  }, [socket]);
+
   const updateChatPreference = useCallback(async (chatId, preference) => {
     try {
       const response = await chatAPI.updateChatPreference(chatId, preference);
@@ -349,7 +330,7 @@ export const useChat = () => {
             : chat
         ));
         if (selectedChat?._id === chatId) {
-          setSelectedChatState(prev => ({
+          setSelectedChat(prev => ({
             ...prev,
             preference: response.data.preference
           }));
@@ -396,6 +377,23 @@ export const useChat = () => {
     }
   }, [chats, activeTab]);
 
+  const handleSelectChat = useCallback(async (chat) => {
+    if (!chat || !chat._id) return;
+    
+    setSelectedChat(chat);
+    await fetchMessages(chat._id);
+    
+    if (chat.unreadCount > 0) {
+      setChats(prev => prev.map(c => 
+        c._id === chat._id 
+          ? { ...c, unreadCount: 0 }
+          : c
+      ));
+    }
+    
+    scrollToBottom();
+  }, [fetchMessages]);
+
   useEffect(() => {
     if (currentUser) {
       const interval = setInterval(() => {
@@ -437,7 +435,6 @@ export const useChat = () => {
     fetchMessages,
     sendMessage,
     markMessageAsRead,
-    markAllMessagesAsRead,
     updateChatPreference,
     sendTypingIndicator,
     scrollToBottom,

@@ -5,7 +5,7 @@ const {
   getChatMessages, 
   markAsRead, 
   deleteMessage 
-} = require('../controllers/messageController');
+} = require('../controllers/message.controller');
 const { authenticate } = require('../middleware/auth');
 
 // All routes are protected

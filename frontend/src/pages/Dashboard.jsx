@@ -109,7 +109,6 @@ const Dashboard = () => {
 
   useEffect(() => {
     return () => {
-      // Cleanup
     };
   }, []);
 
