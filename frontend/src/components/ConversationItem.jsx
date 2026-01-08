@@ -1,0 +1,275 @@
+import React, { useState } from 'react';
+import { 
+  Archive, 
+  Heart, 
+  Lock, 
+  MoreVertical,
+  Check,
+  CheckCheck,
+  Clock,
+  Users as UsersIcon
+} from 'lucide-react';
+
+const ConversationItem = ({
+  chat,
+  isSelected,
+  onSelect,
+  onUpdatePreference,
+  currentUser, // Add currentUser prop
+}) => {
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  // Get other participant for 1:1 chat - FIXED
+  const getOtherParticipant = () => {
+    if (chat.isGroupChat) return null;
+    
+    if (!chat.participants || chat.participants.length < 2) return null;
+    
+    // Find the participant who is NOT the current user
+    const otherParticipant = chat.participants.find(
+      participant => participant._id !== currentUser?._id
+    );
+    
+    return otherParticipant;
+  };
+
+  // Get display name for chat - FIXED
+  const getDisplayName = () => {
+    if (chat.isGroupChat) {
+      return chat.chatName || 'Group Chat';
+    }
+    
+    const otherParticipant = getOtherParticipant();
+    return otherParticipant?.username || 'Unknown User';
+  };
+
+  // Get display avatar for chat - FIXED
+  const getDisplayAvatar = () => {
+    if (chat.isGroupChat) {
+      return chat.chatName?.charAt(0)?.toUpperCase() || 'G';
+    }
+    
+    const otherParticipant = getOtherParticipant();
+    return otherParticipant?.username?.charAt(0)?.toUpperCase() || 'U';
+  };
+
+  // Check if other participant is online
+  const isOtherParticipantOnline = () => {
+    if (chat.isGroupChat) return false;
+    
+    const otherParticipant = getOtherParticipant();
+    return otherParticipant?.isOnline || false;
+  };
+
+  const otherParticipant = getOtherParticipant();
+  const lastMessage = chat.latestMessage;
+  const unreadCount = chat.unreadCount || 0;
+  const preference = chat.preference || {};
+
+  const formatTime = (timestamp) => {
+    if (!timestamp) return '';
+    
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } else if (diffDays === 1) {
+      return 'Yesterday';
+    } else if (diffDays < 7) {
+      return date.toLocaleDateString([], { weekday: 'short' });
+    } else {
+      return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    }
+  };
+
+  const getMessageStatusIcon = (message) => {
+    if (!message) return null;
+    
+    const isOwnMessage = message.sender?._id === currentUser?._id;
+    
+    if (!isOwnMessage) return null;
+    
+    if (message.status === 'seen') {
+      return <CheckCheck className="w-4 h-4 text-blue-400" />;
+    } else if (message.status === 'delivered') {
+      return <CheckCheck className="w-4 h-4 text-gray-400" />;
+    } else if (message.status === 'sent') {
+      return <Check className="w-4 h-4 text-gray-400" />;
+    } else {
+      return <Clock className="w-4 h-4 text-gray-400" />;
+    }
+  };
+
+  const getMessagePreview = (message) => {
+    if (!message) return 'Start a conversation';
+    
+    const isOwnMessage = message.sender?._id === currentUser?._id;
+    
+    if (isOwnMessage) {
+      return `You: ${message.content || 'Media'}`;
+    }
+    
+    if (chat.isGroupChat) {
+      return `${message.sender?.username || 'Someone'}: ${message.content || 'Media'}`;
+    }
+    
+    return message.content || 'Media';
+  };
+
+  const handlePreferenceToggle = (type) => {
+    const newPreference = {
+      ...preference,
+      [type]: !preference[type]
+    };
+    onUpdatePreference(chat._id, newPreference);
+    setShowDropdown(false);
+  };
+
+  return (
+    <div className="relative group">
+      <div
+        onClick={onSelect}
+        className={`p-3 rounded-lg cursor-pointer transition-colors ${
+          isSelected
+            ? 'bg-blue-500/20 border-l-4 border-blue-500'
+            : 'hover:bg-gray-700'
+        }`}
+      >
+        <div className="flex items-center space-x-3">
+          {/* Avatar */}
+          <div className="relative">
+            {chat.isGroupChat ? (
+              <>
+                <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-semibold">
+                  {getDisplayAvatar()}
+                </div>
+                <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-gray-800 rounded-full flex items-center justify-center border border-gray-700">
+                  <UsersIcon className="w-3 h-3 text-gray-400" />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full flex items-center justify-center text-white font-semibold">
+                  {getDisplayAvatar()}
+                </div>
+                {/* Online status */}
+                {isOtherParticipantOnline() && (
+                  <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-gray-800"></div>
+                )}
+              </>
+            )}
+            
+            {/* Preference indicators */}
+            <div className="absolute -top-1 -right-1 flex space-x-1">
+              {preference.locked && (
+                <div className="w-4 h-4 bg-yellow-500 rounded-full flex items-center justify-center">
+                  <Lock className="w-2 h-2 text-white" />
+                </div>
+              )}
+              {preference.isFavorite && (
+                <div className="w-4 h-4 bg-red-500 rounded-full flex items-center justify-center">
+                  <Heart className="w-2 h-2 text-white" />
+                </div>
+              )}
+              {preference.isArchived && (
+                <div className="w-4 h-4 bg-gray-600 rounded-full flex items-center justify-center">
+                  <Archive className="w-2 h-2 text-white" />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Chat info */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-white font-medium truncate">
+                {getDisplayName()}
+              </p>
+              <div className="flex items-center space-x-1">
+                {lastMessage && getMessageStatusIcon(lastMessage)}
+                <span className="text-xs text-gray-400">
+                  {formatTime(lastMessage?.createdAt || chat.updatedAt)}
+                </span>
+              </div>
+            </div>
+            
+            <div className="flex items-center justify-between">
+              <p className="text-gray-400 text-sm truncate">
+                {getMessagePreview(lastMessage)}
+              </p>
+              
+              {unreadCount > 0 && (
+                <span className="bg-blue-500 text-white text-xs rounded-full px-2 py-1 min-w-5 h-5 flex items-center justify-center">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Dropdown menu */}
+      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="relative">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowDropdown(!showDropdown);
+            }}
+            className="p-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-white"
+          >
+            <MoreVertical className="w-4 h-4" />
+          </button>
+
+          {showDropdown && (
+            <div className="absolute right-0 top-full mt-1 bg-gray-800 rounded-lg shadow-xl border border-gray-700 py-2 min-w-48 z-50">
+              <button
+                onClick={() => handlePreferenceToggle('isArchived')}
+                className="w-full px-4 py-2 text-left text-gray-300 hover:bg-gray-700 flex items-center space-x-3"
+              >
+                <Archive className="w-4 h-4" />
+                <span>{preference.isArchived ? 'Unarchive' : 'Archive'}</span>
+              </button>
+
+              <button
+                onClick={() => handlePreferenceToggle('isFavorite')}
+                className="w-full px-4 py-2 text-left text-gray-300 hover:bg-gray-700 flex items-center space-x-3"
+              >
+                <Heart className={`w-4 h-4 ${preference.isFavorite ? 'text-red-500 fill-current' : ''}`} />
+                <span>{preference.isFavorite ? 'Remove favorite' : 'Add favorite'}</span>
+              </button>
+
+              <button
+                onClick={() => handlePreferenceToggle('locked')}
+                className="w-full px-4 py-2 text-left text-gray-300 hover:bg-gray-700 flex items-center space-x-3"
+              >
+                <Lock className={`w-4 h-4 ${preference.locked ? 'text-yellow-500' : ''}`} />
+                <span>{preference.locked ? 'Unlock' : 'Lock'}</span>
+              </button>
+
+              <div className="border-t border-gray-700 my-1"></div>
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowDropdown(false);
+                  // Handle delete
+                }}
+                className="w-full px-4 py-2 text-left text-red-400 hover:bg-gray-700 flex items-center space-x-3"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                <span>Delete chat</span>
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default ConversationItem;
