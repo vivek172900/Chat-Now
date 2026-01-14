@@ -79,6 +79,11 @@ export const socketEmit = {
     socket.emit("mark_as_read", { messageId });
   },
 
+  delivered(messageId) {
+    if (!socket) return;
+    socket.emit('message_delivered', { messageId });
+  },
+
   typing(chatId, isTyping) {
     if (!socket) return;
     socket.emit("typing", { chatId, isTyping });

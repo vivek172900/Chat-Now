@@ -35,4 +35,19 @@ const authenticate = async (req, res, next) => {
   }
 };
 
-module.exports = { authenticate };
+// Require that the authenticated user has a valid userId
+const requireUserId = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ success: false, error: 'Authentication required' });
+  }
+
+  const { userId } = req.user;
+
+  if (!userId || String(userId).length < 6) {
+    return res.status(403).json({ success: false, error: 'userId required. Please complete account setup.' });
+  }
+
+  next();
+};
+
+module.exports = { authenticate, requireUserId };

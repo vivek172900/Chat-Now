@@ -17,7 +17,14 @@ const MessageBubble = ({
   showAvatar = false,
   sender,
   isSending = false,
-  isFailed = false
+  isFailed = false,
+  currentTheme = {
+    bubbleUser: 'bg-gradient-to-r from-blue-500 to-blue-600',
+    bubbleOther: 'bg-gray-700',
+    textUser: 'text-white',
+    textOther: 'text-white'
+  },
+  currentUser // ADD THIS LINE - accept currentUser prop
 }) => {
   const { 
     content, 
@@ -50,7 +57,7 @@ const MessageBubble = ({
     
     switch(status) {
       case 'seen':
-        return <CheckCheck className="w-4 h-4 text-blue-400" />;
+        return <CheckCheck className="w-4 h-4 text-emerald-400" />;
       case 'delivered':
         return <CheckCheck className="w-4 h-4 text-gray-400" />;
       case 'sent':
@@ -75,6 +82,28 @@ const MessageBubble = ({
     }
   };
 
+  // Helper function to determine if a color is light or dark
+  const isLightColor = (colorClass) => {
+    const lightColors = [
+      'bg-gray-100', 'bg-gray-200', 'bg-gray-300', 'bg-gray-400',
+      'bg-amber-50', 'bg-amber-100', 'bg-blue-50', 'bg-blue-100',
+      'bg-emerald-50', 'bg-emerald-100', 'bg-purple-50', 'bg-purple-100',
+      'bg-white', 'bg-gray-50'
+    ];
+    return lightColors.some(lightColor => colorClass.includes(lightColor));
+  };
+
+  const isUserBubbleLight = isLightColor(currentTheme.bubbleUser);
+  const isOtherBubbleLight = isLightColor(currentTheme.bubbleOther);
+
+  // Determine text colors based on bubble background
+  const userTextColor = isUserBubbleLight ? 'text-gray-900' : 'text-white';
+  const otherTextColor = isOtherBubbleLight ? 'text-gray-900' : 'text-white';
+  
+  // Determine secondary text colors (for message type indicators and time)
+  const userSecondaryTextColor = isUserBubbleLight ? 'text-gray-700' : 'text-blue-100';
+  const otherSecondaryTextColor = isOtherBubbleLight ? 'text-gray-700' : 'text-gray-400';
+
   const renderMediaMessage = () => {
     if (!mediaUrl) return null;
 
@@ -84,7 +113,7 @@ const MessageBubble = ({
           <div className="mt-2">
             <img 
               src={mediaUrl} 
-              alt="Shared image" 
+              alt={content || ''} 
               className="max-w-xs rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
               onClick={() => window.open(mediaUrl, '_blank')}
             />
@@ -136,20 +165,66 @@ const MessageBubble = ({
     }
   };
 
+  // Get sender's profile picture or initials
+  const getSenderAvatar = () => {
+    if (!sender) return null;
+    
+    if (sender.profilePic) {
+      return (
+        <img 
+          src={sender.profilePic} 
+          alt={sender.username} 
+          className="w-8 h-8 rounded-full object-cover"
+        />
+      );
+    }
+    
+    return (
+      <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 flex items-center justify-center text-white text-sm font-semibold">
+        {sender.username?.charAt(0)?.toUpperCase() || 'U'}
+      </div>
+    );
+  };
+
+  // Get own user avatar using currentUser - UPDATED FUNCTION
+  const getOwnAvatar = () => {
+    if (!currentUser) {
+      return (
+        <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 flex items-center justify-center text-white text-sm font-semibold">
+          {/* Default */}
+        </div>
+      );
+    }
+    
+    if (currentUser.profilePic) {
+      return (
+        <img 
+          src={currentUser.profilePic} 
+          alt={currentUser.username} 
+          className="w-8 h-8 rounded-full object-cover"
+        />
+      );
+    }
+    
+    return (
+      <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 flex items-center justify-center text-white text-sm font-semibold">
+        {currentUser.username?.charAt(0)?.toUpperCase() || 'U'}
+      </div>
+    );
+  };
+
   return (
     <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'} mb-3`}>
-      {/* Avatar for group chats */}
-      {!isOwn && showAvatar && sender && (
+      {/* Avatar for other users' messages - Always show for non-own messages */}
+      {!isOwn && sender && (
         <div className="flex-shrink-0 mr-3 self-end">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 flex items-center justify-center text-white text-sm font-semibold">
-            {sender.username?.charAt(0) || 'U'}
-          </div>
+          {getSenderAvatar()}
         </div>
       )}
       
       <div className={`max-w-[70%] ${isOwn ? 'ml-12' : 'mr-12'}`}>
         {/* Sender name for group chats */}
-        {!isOwn && showAvatar && sender && (
+        {!isOwn && sender && showAvatar && (
           <p className="text-xs text-gray-400 mb-1 ml-1">
             {sender.username}
           </p>
@@ -161,17 +236,17 @@ const MessageBubble = ({
             className={`rounded-2xl px-4 py-2 ${
               isOwn
                 ? isFailed 
-                  ? 'bg-red-900/30 text-white rounded-br-none border border-red-800/50'
+                  ? 'bg-red-900/30 border border-red-800/50 rounded-br-none'
                   : isSending
-                    ? 'bg-blue-500/70 text-white rounded-br-none'
-                    : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-br-none'
-                : 'bg-gray-700 text-white rounded-bl-none'
+                    ? 'bg-blue-500/70 rounded-br-none'
+                    : `${currentTheme.bubbleUser || 'bg-gradient-to-r from-blue-500 to-blue-600'} rounded-br-none`
+                : `${currentTheme.bubbleOther || 'bg-gray-700'} rounded-bl-none`
             }`}
           >
             {/* Message type indicator */}
             {messageType !== 'text' && (
               <div className={`flex items-center mb-1 text-sm ${
-                isOwn ? 'text-blue-100' : 'text-gray-400'
+                isOwn ? userSecondaryTextColor : otherSecondaryTextColor
               }`}>
                 {getMessageTypeIcon()}
                 <span className="capitalize">{messageType}</span>
@@ -179,41 +254,23 @@ const MessageBubble = ({
             )}
             
             {/* Message content */}
-            <p className="whitespace-pre-wrap break-words">{content}</p>
+            <p className={`whitespace-pre-wrap break-words ${isOwn ? userTextColor : otherTextColor}`}>
+              {content}
+            </p>
             
             {/* Media content */}
             {renderMediaMessage()}
             
             {/* Message status and time */}
             <div className={`flex items-center justify-end mt-1 space-x-2 ${
-              isOwn ? 'text-blue-100' : 'text-gray-400'
+              isOwn ? userSecondaryTextColor : otherSecondaryTextColor
             }`}>
               <span className="text-xs">{formatTime(createdAt)}</span>
               {getStatusIcon()}
             </div>
           </div>
           
-          {/* Read receipts for 1:1 chats */}
-          {isOwn && readBy.length > 0 && (
-            <div className="flex justify-end mt-1">
-              <div className="flex items-center space-x-1">
-                <div className="flex -space-x-2">
-                  {readBy.slice(0, 3).map((read, index) => (
-                    <div 
-                      key={index}
-                      className="w-5 h-5 rounded-full bg-gradient-to-r from-green-400 to-emerald-500 border-2 border-gray-800 flex items-center justify-center text-xs text-white"
-                      title={read.user?.username || 'User'}
-                    >
-                      {read.user?.username?.charAt(0) || 'U'}
-                    </div>
-                  ))}
-                </div>
-                {readBy.length > 3 && (
-                  <span className="text-xs text-gray-400">+{readBy.length - 3}</span>
-                )}
-              </div>
-            </div>
-          )}
+
           
           {/* Failed message retry option */}
           {isFailed && isOwn && (
@@ -227,12 +284,10 @@ const MessageBubble = ({
         </div>
       </div>
       
-      {/* Avatar for own messages (if needed for alignment) */}
+      {/* Avatar for own messages */}
       {isOwn && (
         <div className="flex-shrink-0 ml-3 self-end">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 flex items-center justify-center text-white text-sm font-semibold">
-            {/* You can show current user's initial here if needed */}
-          </div>
+          {getOwnAvatar()}
         </div>
       )}
     </div>

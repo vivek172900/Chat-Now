@@ -6,10 +6,10 @@ const {
   getUserCalls, 
   getCallDetails 
 } = require('../controllers/callController');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, requireUserId } = require('../middleware/auth');
 
-// All routes are protected
-router.use(authenticate);
+// All routes require authenticated user and a userId
+router.use(authenticate, requireUserId);
 
 router.post('/', initiateCall);
 router.put('/:callId/status', updateCallStatus);

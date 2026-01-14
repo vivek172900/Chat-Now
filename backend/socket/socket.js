@@ -2,6 +2,7 @@ const socketIO = require("socket.io");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const Chat = require("../models/Chat");
+const Message = require("../models/Message");
 
 let io;
 
@@ -89,11 +90,47 @@ const initializeSocket = (server) => {
     });
 
     // 👀 READ RECEIPT
-    socket.on("mark_as_read", ({ messageId }) => {
-      socket.broadcast.emit("message_read", {
-        messageId,
-        readBy: socket.userId,
-      });
+    socket.on("mark_as_read", async ({ messageId }) => {
+      try {
+        const message = await Message.findById(messageId);
+        if (!message) return;
+
+        const already = message.readBy.some(r => r.user.toString() === socket.userId.toString());
+        if (!already) {
+          message.readBy.push({ user: socket.userId, readAt: new Date() });
+          message.status = 'seen';
+          await message.save();
+
+          socket.broadcast.emit("message_read", {
+            messageId,
+            readBy: socket.userId,
+          });
+        }
+      } catch (err) {
+        console.error('mark_as_read socket error:', err.message);
+      }
+    });
+
+    // DELIVERY ACK (clients should emit when they receive a new_message in real-time)
+    socket.on('message_delivered', async ({ messageId }) => {
+      try {
+        const message = await Message.findById(messageId);
+        if (!message) return;
+
+        // don't mark sender's own receipt
+        if (message.sender && message.sender.toString() === socket.userId.toString()) return;
+
+        // only update if not already seen
+        if (message.status !== 'seen') {
+          message.status = 'delivered';
+          await message.save();
+
+          // notify chat that message was delivered
+          io.to(`chat_${message.chat}`).emit('message_delivered', { messageId, deliveredBy: socket.userId });
+        }
+      } catch (err) {
+        console.error('message_delivered socket error:', err.message);
+      }
     });
 
     // ✍️ TYPING

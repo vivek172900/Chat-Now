@@ -20,7 +20,11 @@ const chatPreferenceSchema = new mongoose.Schema(
       type: Boolean,
       default: false
     },
-    mutedUntil: Date
+    mutedUntil: Date,
+    wallpaper: {
+      type: String,
+      default: null
+    }
   },
   { timestamps: true }
 );

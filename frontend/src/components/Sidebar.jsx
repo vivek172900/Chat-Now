@@ -41,9 +41,13 @@ const Sidebar = ({ activeTab, setActiveTab, totalUnreadCount, currentUser, handl
       </div>
 
       <div className="flex flex-col items-center space-y-4">
-        <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-semibold">
-          {currentUser.fullname?.charAt(0) || 'U'}
-        </div>
+        {currentUser?.profilePic ? (
+          <img src={currentUser.profilePic} alt={currentUser.username} className="w-10 h-10 rounded-full object-cover" />
+        ) : (
+          <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-semibold">
+            {currentUser.fullname?.charAt(0) || 'U'}
+          </div>
+        )}
         <button
           onClick={handleLogout}
           className="text-gray-400 hover:text-red-400 transition-colors"

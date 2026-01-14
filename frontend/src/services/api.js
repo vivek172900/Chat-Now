@@ -27,15 +27,6 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    // if (
-    //   error.response &&
-    //   (error.response.status === 401 ||
-    //     error.response.status === 403)
-    // ) {
-    //   console.warn('Auth error, logging out');
-    //   localStorage.removeItem('token');
-    //   localStorage.removeItem('user');
-    // }
     return Promise.reject(error);
   }
 );
@@ -47,16 +38,40 @@ export const authAPI = {
   getCurrentUser: () =>
     api.get('/api/auth/me'),
 
+  updateProfile: (profileData) =>
+    api.put('/api/auth/me', profileData),
+
+  addUserId: (data) =>
+    api.post('/api/auth/add-user-id', data),
+
+  checkUserId: (userId) =>
+    api.get(`/api/auth/check-userid?userId=${encodeURIComponent(userId)}`),
+
   searchUsers: (search = '') =>
     api.get(`/api/auth/search?search=${encodeURIComponent(search)}`),
 
   updateStatus: (isOnline) =>
     api.put('/api/auth/status', { isOnline }),
+
+
+
+  getUserByClerkId: (clerkUserId) =>
+    api.get(`/api/auth/clerk/${clerkUserId}`),
+
+  getUserById: (userId) =>
+    api.get(`/api/auth/id/${userId}`),
+  setPin: (pin) =>
+    api.post('/api/auth/set-pin', { pin }),
+  verifyPin: (pin) =>
+    api.post('/api/auth/verify-pin', { pin }),
 };
 
 export const chatAPI = {
   getOrCreateChat: (userId) =>
     api.post('/api/chats/direct', { userId }),
+
+  deleteChat: (chatId) =>
+    api.delete(`/api/chats/${chatId}`),
 
   createGroupChat: (chatData) =>
     api.post('/api/chats/group', chatData),
@@ -82,6 +97,12 @@ export const messageAPI = {
 
   markAsRead: (messageId) =>
     api.put(`/api/messages/${messageId}/read`),
+
+  markChatAsRead: (chatId) =>
+    api.put(`/api/messages/chat/${chatId}/read`),
+
+  clearChat: (chatId) =>
+    api.delete(`/api/messages/chat/${chatId}/clear`),
 
   deleteMessage: (messageId) =>
     api.delete(`/api/messages/${messageId}`),

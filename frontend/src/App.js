@@ -7,6 +7,8 @@ import Practice from './components2/Practice';
 import Login from './pages/Login';
 import { useState } from 'react';
 import DebugAuth from './pages/DebugAuth';
+import SetupUserId from './components/setUp-UserId/setup-user-id.jsx';
+import RequireUserId from './components/auth/RequireUserId';
 
 function App() {
   const [formData, setFormData] = useState({
@@ -18,10 +20,11 @@ function App() {
     <Router>
       <Routes>
         <Route path='/' element={<Home_main />}></Route>
-        <Route path='/chat' element={<Dashboard_main />}></Route>
+        <Route path='/chat' element={<RequireUserId><Dashboard_main /></RequireUserId>}></Route>
         <Route path='/signup' element={<Maincompo />}> </Route>
         <Route path="/debug-auth" element={<DebugAuth />} />
         <Route path='/login' element={<Login />}> </Route>
+        <Route path="/setup-user-id" element={<SetupUserId />} />
         <Route path='/practice' element={<Practice />}> </Route>
       </Routes>
     </Router>

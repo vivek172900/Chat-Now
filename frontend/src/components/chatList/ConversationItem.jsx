@@ -15,11 +15,17 @@ const ConversationItem = ({
   isSelected,
   onSelect,
   onUpdatePreference,
-  currentUser, // Add currentUser prop
+  onDeleteChat,
+  onRequestSetPin,
+  onRequestVerifyPin,
+  currentUser,
+  currentTheme = {
+    bubbleUser: 'bg-gradient-to-r from-blue-500 to-blue-600'
+  }
 }) => {
   const [showDropdown, setShowDropdown] = useState(false);
 
-  // Get other participant for 1:1 chat - FIXED
+  // Get other participant for 1:1 chat
   const getOtherParticipant = () => {
     if (chat.isGroupChat) return null;
     
@@ -33,24 +39,44 @@ const ConversationItem = ({
     return otherParticipant;
   };
 
-  // Get display name for chat - FIXED
-  const getDisplayName = () => {
+  // Get display ID for chat - UPDATED to show userId
+  const getDisplayId = () => {
     if (chat.isGroupChat) {
-      return chat.chatName || 'Group Chat';
+      return chat.chatName || `Group ${chat._id?.slice(-4) || ''}`;
     }
     
     const otherParticipant = getOtherParticipant();
-    return otherParticipant?.username || 'Unknown User';
+    // Show userId if available, otherwise fallback to truncated _id
+    return otherParticipant?.userId || otherParticipant?._id?.slice(-8) || 'Unknown';
   };
 
-  // Get display avatar for chat - FIXED
+  // Get display avatar for chat - using first character of userId or ID
   const getDisplayAvatar = () => {
     if (chat.isGroupChat) {
       return chat.chatName?.charAt(0)?.toUpperCase() || 'G';
     }
     
     const otherParticipant = getOtherParticipant();
-    return otherParticipant?.username?.charAt(0)?.toUpperCase() || 'U';
+    // Use first character of userId if available, otherwise use first character of _id
+    const displayId = otherParticipant?.userId || otherParticipant?._id || 'U';
+    return displayId.charAt(0).toUpperCase();
+  };
+
+  // Get display name with userId in parentheses for reference - optional
+  const getDisplayNameWithId = () => {
+    if (chat.isGroupChat) {
+      return chat.chatName || `Group Chat`;
+    }
+    
+    const otherParticipant = getOtherParticipant();
+    const userId = otherParticipant?.userId;
+    
+    if (!userId) {
+      return otherParticipant?.username || `User ${otherParticipant?._id?.slice(-4)}`;
+    }
+    
+    // Show just the userId (cleaner)
+    return userId;
   };
 
   // Check if other participant is online
@@ -112,13 +138,54 @@ const ConversationItem = ({
     }
     
     if (chat.isGroupChat) {
-      return `${message.sender?.username || 'Someone'}: ${message.content || 'Media'}`;
+      // For group chats, show sender's userId if available
+      const senderId = message.sender?.userId || message.sender?._id?.slice(-4);
+      return `${senderId || 'Someone'}: ${message.content || 'Media'}`;
     }
     
     return message.content || 'Media';
   };
 
-  const handlePreferenceToggle = (type) => {
+  const handlePreferenceToggle = async (type) => {
+    // Special handling for archiving locked chats
+    if (type === 'isArchived' && preference.locked) {
+      alert('This chat is locked. Unlock it first to archive.');
+      setShowDropdown(false);
+      return;
+    }
+
+    if (type === 'locked') {
+      // If locking and user doesn't have PIN, prompt to set one
+      if (!preference.locked && !currentUser?.hasPin) {
+        // Ask parent to open PIN setup
+        if (typeof onRequestSetPin === 'function') {
+          onRequestSetPin(chat._id);
+        } else {
+          alert('Please set a PIN in settings before locking chats.');
+        }
+        setShowDropdown(false);
+        return;
+      }
+
+      // If unlocking, request verification
+      if (preference.locked) {
+        if (typeof onRequestVerifyPin === 'function') {
+          const ok = await onRequestVerifyPin(chat._id);
+          if (!ok) {
+            alert('PIN verification failed.');
+            setShowDropdown(false);
+            return;
+          }
+        } else {
+          const confirmed = window.confirm('Unlock this chat?');
+          if (!confirmed) {
+            setShowDropdown(false);
+            return;
+          }
+        }
+      }
+    }
+
     const newPreference = {
       ...preference,
       [type]: !preference[type]
@@ -127,15 +194,53 @@ const ConversationItem = ({
     setShowDropdown(false);
   };
 
+  // Extract the main color from the bubbleUser class
+  const getThemeColor = () => {
+    if (!currentTheme?.bubbleUser) return 'blue';
+    
+    const colorMap = {
+      'bg-blue-': 'blue',
+      'bg-gray-': 'gray',
+      'bg-orange-': 'orange',
+      'bg-green-': 'green',
+      'bg-purple-': 'purple',
+      'bg-indigo-': 'indigo',
+    };
+    
+    for (const [colorClass, colorName] of Object.entries(colorMap)) {
+      if (currentTheme.bubbleUser.includes(colorClass)) {
+        return colorName;
+      }
+    }
+    
+    return 'blue';
+  };
+
+  const themeColor = getThemeColor();
+  
+  // Map theme colors to corresponding Tailwind classes for selection highlight
+  const getSelectedStyle = () => {
+    const colorStyles = {
+      blue: 'bg-blue-500/20 border-l-4 border-blue-500',
+      gray: 'bg-gray-500/20 border-l-4 border-gray-500',
+      orange: 'bg-orange-500/20 border-l-4 border-orange-500',
+      green: 'bg-green-500/20 border-l-4 border-green-500',
+      purple: 'bg-purple-500/20 border-l-4 border-purple-500',
+      indigo: 'bg-indigo-500/20 border-l-4 border-indigo-500',
+    };
+    
+    return colorStyles[themeColor] || colorStyles.blue;
+  };
+
+  const selectedBgColor = isSelected 
+    ? getSelectedStyle()
+    : 'hover:bg-gray-700';
+
   return (
     <div className="relative group">
       <div
         onClick={onSelect}
-        className={`p-3 rounded-lg cursor-pointer transition-colors ${
-          isSelected
-            ? 'bg-blue-500/20 border-l-4 border-blue-500'
-            : 'hover:bg-gray-700'
-        }`}
+        className={`p-3 rounded-lg cursor-pointer transition-colors ${selectedBgColor}`}
       >
         <div className="flex items-center space-x-3">
           {/* Avatar */}
@@ -151,9 +256,14 @@ const ConversationItem = ({
               </>
             ) : (
               <>
-                <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full flex items-center justify-center text-white font-semibold">
-                  {getDisplayAvatar()}
-                </div>
+                {otherParticipant?.profilePic ? (
+                  <img src={otherParticipant.profilePic} alt={getDisplayId()} className="w-12 h-12 rounded-full object-cover" />
+                ) : (
+                  <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full flex items-center justify-center text-white font-semibold">
+                    {getDisplayAvatar()}
+                  </div>
+                )}
+
                 {/* Online status */}
                 {isOtherParticipantOnline() && (
                   <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-gray-800"></div>
@@ -184,9 +294,17 @@ const ConversationItem = ({
           {/* Chat info */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between mb-1">
-              <p className="text-white font-medium truncate">
-                {getDisplayName()}
-              </p>
+              <div className="flex items-center space-x-2">
+                <p className="text-white font-medium truncate">
+                  {getDisplayNameWithId()}
+                </p>
+                {/* Show truncated _id as a small badge for reference */}
+                {!chat.isGroupChat && otherParticipant?._id && !otherParticipant?.userId && (
+                  <span className="text-xs text-gray-400 bg-gray-700 px-1 py-0.5 rounded">
+                    ID: {otherParticipant._id.slice(-4)}
+                  </span>
+                )}
+              </div>
               <div className="flex items-center space-x-1">
                 {lastMessage && getMessageStatusIcon(lastMessage)}
                 <span className="text-xs text-gray-400">
@@ -224,7 +342,16 @@ const ConversationItem = ({
           </button>
 
           {showDropdown && (
-            <div className="absolute right-0 top-full mt-1 bg-gray-800 rounded-lg shadow-xl border border-gray-700 py-2 min-w-48 z-50">
+            <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl py-2 min-w-48 z-50">
+              <div className="px-4 py-2 text-xs text-gray-400 border-b border-gray-700 mb-2">
+                <div className="truncate">Chat ID: {chat._id?.slice(-8)}</div>
+                {!chat.isGroupChat && otherParticipant && (
+                  <div className="truncate mt-1">
+                    User: {otherParticipant.userId || otherParticipant._id?.slice(-8)}
+                  </div>
+                )}
+              </div>
+              
               <button
                 onClick={() => handlePreferenceToggle('isArchived')}
                 className="w-full px-4 py-2 text-left text-gray-300 hover:bg-gray-700 flex items-center space-x-3"
@@ -252,10 +379,16 @@ const ConversationItem = ({
               <div className="border-t border-gray-700 my-1"></div>
 
               <button
-                onClick={(e) => {
+                onClick={async (e) => {
                   e.stopPropagation();
                   setShowDropdown(false);
-                  // Handle delete
+
+                  const ok = window.confirm('Delete this chat for all participants? This will remove messages and cannot be undone.');
+                  if (!ok) return;
+
+                  if (typeof onDeleteChat === 'function') {
+                    await onDeleteChat(chat._id);
+                  }
                 }}
                 className="w-full px-4 py-2 text-left text-red-400 hover:bg-gray-700 flex items-center space-x-3"
               >

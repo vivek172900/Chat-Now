@@ -13,7 +13,11 @@ const ChatList = ({
   onChatSelect,
   onUserSelect,
   onUpdateChatPreference,
+  onDeleteChat,
+  onRequestSetPin,
+  onRequestVerifyPin,
   currentUser, // Add currentUser prop
+  currentTheme
 }) => {
   const getHeaderTitle = () => {
     switch(activeTab) {
@@ -59,7 +63,11 @@ const ChatList = ({
             isSelected={selectedChat?._id === chat._id}
             onSelect={() => onChatSelect(chat)}
             onUpdatePreference={onUpdateChatPreference}
+            onDeleteChat={onDeleteChat}
+            onRequestSetPin={onRequestSetPin}
+            onRequestVerifyPin={onRequestVerifyPin}
             currentUser={currentUser} // Pass currentUser to ConversationItem
+            currentTheme={currentTheme}
           />
         ))}
       </div>
@@ -67,10 +75,14 @@ const ChatList = ({
   };
 
   const renderUsersTab = () => {
-    const filteredUsers = users.filter(user => 
-      user.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const filteredUsers = users.filter(user => {
+      const q = searchQuery.toLowerCase();
+      return (
+        (user.userId && user.userId.toLowerCase().includes(q)) ||
+        (user.username && user.username.toLowerCase().includes(q)) ||
+        (user.email && user.email.toLowerCase().includes(q))
+      );
+    });
 
     // Filter out current user from users list
     const filteredUsersWithoutSelf = filteredUsers.filter(
@@ -111,7 +123,7 @@ const ChatList = ({
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-white font-medium truncate">{user.username}</p>
-              <p className="text-gray-400 text-sm truncate">{user.email}</p>
+              <p className="text-gray-400 text-sm truncate">{user.about || 'No bio available'}</p>
             </div>
             <div className="text-xs text-gray-500">
               {user.isOnline ? 'Online' : 'Offline'}
@@ -175,7 +187,7 @@ const ChatList = ({
             <Search className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Search..."
+              placeholder={activeTab === 'users' ? 'Search by userId or username...' : 'Search...'}
               value={searchQuery}
               onChange={(e) => onSearch(e.target.value)}
               className="w-full bg-gray-700 text-white pl-10 pr-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
