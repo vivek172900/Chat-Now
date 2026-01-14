@@ -2,7 +2,12 @@ const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 
 const generateToken = (userId) => {
-  return jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: '7d' });
+  const secret = process.env.JWT_SECRET_KEY || process.env.JWT_SECRET;
+  if (!secret) {
+    console.error('JWT secret not set. Please set JWT_SECRET_KEY or JWT_SECRET in .env');
+    throw new Error('JWT secret not configured');
+  }
+  return jwt.sign({ userId }, secret, { expiresIn: '7d' });
 };
 
 const syncUser = async (req, res) => {

@@ -11,7 +11,13 @@ const authenticate = async (req, res, next) => {
     }
 
     // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const secret = process.env.JWT_SECRET_KEY || process.env.JWT_SECRET;
+    if (!secret) {
+      console.error('Auth middleware error: JWT secret not configured');
+      return res.status(500).json({ error: 'Server JWT config error' });
+    }
+
+    const decoded = jwt.verify(token, secret);
     
     // Find user
     const user = await User.findById(decoded.userId);

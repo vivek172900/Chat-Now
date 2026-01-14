@@ -4,7 +4,7 @@ const { getIO } = require("../socket/socket");
 
 const sendMessage = async (req, res) => {
   try {
-    const { chatId, content, messageType = "text", mediaUrl } = req.body;
+    const { chatId, content, messageType = "text", mediaUrl, clientId } = req.body;
     const userId = req.user._id;
 
     const chat = await Chat.findById(chatId);
@@ -27,14 +27,15 @@ const sendMessage = async (req, res) => {
     const populatedMessage = await Message.findById(message._id)
       .populate("sender", "username profilePic");
 
-    // 🔥 SOCKET EMIT
+    // 🔥 SOCKET EMIT - include optional clientId so sender can correlate optimistic message
     const io = getIO();
     io.to(`chat_${chatId}`).emit("new_message", {
       chatId,
       message: populatedMessage,
+      clientId: clientId || null,
     });
 
-    res.status(201).json({ success: true, message: populatedMessage });
+    res.status(201).json({ success: true, message: populatedMessage, clientId: clientId || null });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

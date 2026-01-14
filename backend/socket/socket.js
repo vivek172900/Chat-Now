@@ -1,7 +1,6 @@
 const socketIO = require("socket.io");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
-const SocketSession = require("../models/SocketSession");
 const Chat = require("../models/Chat");
 
 let io;
@@ -12,56 +11,97 @@ const initializeSocket = (server) => {
       origin: process.env.FRONTEND_URL || "http://localhost:3000",
       credentials: true,
     },
+    pingTimeout: 60000,
+    pingInterval: 25000,
   });
 
+  // 🔐 JWT AUTH MIDDLEWARE
   io.use(async (socket, next) => {
     try {
-      const token = socket.handshake.auth.token;
-      if (!token) return next(new Error("No token"));
+      const token = socket.handshake.auth?.token;
 
-      const decoded = jwt.verify(token, process.env.JWT_SECRET_KEY);
-      const user = await User.findById(decoded.userId);
-      if (!user) return next(new Error("User not found"));
+      if (!token) {
+        return next(new Error("No token provided"));
+      }
 
-      socket.userId = user._id;
+      const secret = process.env.JWT_SECRET_KEY || process.env.JWT_SECRET;
+      if (!secret) {
+        console.error('Socket auth error: JWT secret not configured');
+        return next(new Error('Invalid token'));
+      }
+
+      const decoded = jwt.verify(token, secret);
+
+      if (!decoded?.userId) {
+        return next(new Error("Invalid token payload"));
+      }
+
+      const user = await User.findById(decoded.userId).select("_id");
+      if (!user) {
+        return next(new Error("User not found"));
+      }
+
+      socket.userId = user._id.toString();
       next();
-    } catch {
+    } catch (err) {
+      console.error("Socket auth error:", err.message);
       next(new Error("Invalid token"));
     }
   });
 
   io.on("connection", async (socket) => {
-    console.log("✅ Socket connected:", socket.userId);
+    console.log("🟢 Socket connected:", socket.userId);
 
+    // Mark user online
     await User.findByIdAndUpdate(socket.userId, {
       isOnline: true,
       lastSeen: new Date(),
     });
 
-    await SocketSession.findOneAndUpdate(
-      { user: socket.userId },
-      { socketId: socket.id },
-      { upsert: true }
-    );
-
+    // Personal room
     socket.join(`user_${socket.userId}`);
 
-    const chats = await Chat.find({ participants: socket.userId });
-    chats.forEach((chat) => socket.join(`chat_${chat._id}`));
+    // Join chat rooms
+    const chats = await Chat.find({
+      participants: socket.userId,
+    }).select("_id");
 
-    socket.on("typing", ({ chatId, isTyping }) => {
-      socket.to(`chat_${chatId}`).emit("typing_indicator", {
-        userId: socket.userId,
-        isTyping,
+    chats.forEach((chat) => {
+      socket.join(`chat_${chat._id}`);
+    });
+
+    // 🔹 JOIN CHAT
+    socket.on("join_chat", ({ chatId }) => {
+      socket.join(`chat_${chatId}`);
+    });
+
+    socket.on("leave_chat", ({ chatId }) => {
+      socket.leave(`chat_${chatId}`);
+    });
+
+    // 💬 SEND MESSAGE
+    socket.on("send_message", ({ chatId, message }) => {
+      socket.to(`chat_${chatId}`).emit("new_message", {
+        chatId,
+        message,
+        senderId: socket.userId,
       });
     });
 
-    socket.on("call_initiate", ({ receiverIds, callId }) => {
-      receiverIds.forEach((id) => {
-        io.to(`user_${id}`).emit("incoming_call", {
-          callId,
-          callerId: socket.userId,
-        });
+    // 👀 READ RECEIPT
+    socket.on("mark_as_read", ({ messageId }) => {
+      socket.broadcast.emit("message_read", {
+        messageId,
+        readBy: socket.userId,
+      });
+    });
+
+    // ✍️ TYPING
+    socket.on("typing", ({ chatId, isTyping }) => {
+      socket.to(`chat_${chatId}`).emit("typing_indicator", {
+        chatId,
+        userId: socket.userId,
+        isTyping,
       });
     });
 
@@ -71,30 +111,19 @@ const initializeSocket = (server) => {
         lastSeen: new Date(),
       });
 
-      await SocketSession.deleteOne({ socketId: socket.id });
-
-      console.log("❌ Socket disconnected:", socket.userId);
+      console.log("🔴 Socket disconnected:", socket.userId);
     });
   });
 };
 
 const getIO = () => {
-  if (!io) throw new Error("Socket not initialized");
+  if (!io) {
+    throw new Error("Socket.io not initialized");
+  }
   return io;
 };
 
 module.exports = { initializeSocket, getIO };
-
-
-
-
-
-
-
-
-
-
-
 
 
 

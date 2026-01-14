@@ -15,191 +15,137 @@ export const useChat = () => {
 
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
+  const selectedChatRef = useRef(null);
+  const currentUserRef = useRef(null);
+
+  useEffect(() => {
+    selectedChatRef.current = selectedChat;
+  }, [selectedChat]);
+
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
+
+
 
   useEffect(() => {
     const token = localStorage.getItem('token');
     const userData = localStorage.getItem('user');
-    
-    if (token && userData) {
+
+    if (!token || !userData) return;
+
+    const user = JSON.parse(userData);
+    setCurrentUser(user);
+
+    const init = async () => {
       try {
-        const user = JSON.parse(userData);
-        setCurrentUser(user);
-        
-        const initSocket = async () => {
-          try {
-            const socketInstance = await initializeSocket();
-            setSocket(socketInstance);
-            
-            socketInstance.on('new_message', (data) => {
-              if (selectedChat && data.chatId === selectedChat._id) {
-                setMessages(prev => {
-                  const exists = prev.some(msg => msg._id === data.message._id);
-                  if (exists) return prev;
-                  return [...prev, data.message];
-                });
-                scrollToBottom();
+        const socketInstance = initializeSocket();
+        setSocket(socketInstance);
+
+        socketInstance.on('new_message', ({ chatId, message, clientId }) => {
+          const activeChat = selectedChatRef.current;
+
+          // Handle messages array: prefer replacing an optimistic (temp) message if clientId matches
+          setMessages(prev => {
+            // If server message already exists, do nothing
+            if (prev.some(m => m._id === message._id)) return prev;
+
+            // If clientId provided and a temp message exists, replace it
+            if (clientId) {
+              const idx = prev.findIndex(m => m._id === clientId);
+              if (idx !== -1) {
+                const updated = [...prev];
+                updated[idx] = message;
+                return updated;
               }
-              
-              setChats(prev => prev.map(chat => {
-                if (chat._id === data.chatId) {
-                  return {
+            }
+
+            // Otherwise append
+            return activeChat?._id === chatId ? [...prev, message] : prev;
+          });
+
+          // Update chats list
+          setChats(prev =>
+            prev.map(chat =>
+              chat._id === chatId
+                ? {
                     ...chat,
-                    latestMessage: data.message,
-                    unreadCount: chat._id === selectedChat?._id ? 0 : (chat.unreadCount || 0) + 1,
-                    updatedAt: new Date().toISOString()
-                  };
-                }
-                return chat;
-              }));
-            });
+                    latestMessage: message,
+                    unreadCount:
+                      activeChat?._id === chatId ? 0 : (chat.unreadCount || 0) + 1,
+                  }
+                : chat
+            )
+          );
+        });
 
-            socketInstance.on('message_sent', (data) => {
-              setMessages(prev => prev.map(msg => 
-                msg._id?.includes('temp-') && data.message.sender?._id === currentUser?._id
-                  ? data.message
-                  : msg
-              ));
-              
-              setChats(prev => prev.map(chat => {
-                if (chat._id === data.chatId) {
-                  return {
-                    ...chat,
-                    latestMessage: data.message,
-                    updatedAt: new Date().toISOString()
-                  };
-                }
-                return chat;
-              }));
-            });
+        socketInstance.on('message_read', ({ messageId, readBy }) => {
+          setMessages(prev =>
+            prev.map(msg =>
+              msg._id === messageId
+                ? {
+                    ...msg,
+                    readBy: [
+                      ...(msg.readBy || []),
+                      { user: readBy, readAt: new Date() },
+                    ],
+                  }
+                : msg
+            )
+          );
+        });
 
-            socketInstance.on('message_read', (data) => {
-              setMessages(prev => prev.map(msg => 
-                msg._id === data.messageId 
-                  ? { 
-                      ...msg, 
-                      status: data.status,
-                      readBy: [...(msg.readBy || []).filter(r => r.user !== data.readBy), { 
-                        user: data.readBy, 
-                        readAt: new Date() 
-                      }]
-                    }
-                  : msg
-              ));
-            });
-
-            socketInstance.on('typing_indicator', (data) => {
-              setTypingUsers(prev => ({
-                ...prev,
-                [data.chatId]: {
-                  ...prev[data.chatId],
-                  [data.userId]: data.isTyping ? data.timestamp : null
-                }
-              }));
-              
-              if (data.isTyping) {
-                setTimeout(() => {
-                  setTypingUsers(prev => {
-                    const chatTyping = { ...prev[data.chatId] };
-                    delete chatTyping[data.userId];
-                    return {
-                      ...prev,
-                      [data.chatId]: chatTyping
-                    };
-                  });
-                }, 3000);
+        socketInstance.on('typing_indicator', ({ chatId, userId, isTyping }) => {
+          if (!isTyping) {
+            setTypingUsers(prev => {
+              const updated = { ...prev };
+              if (updated[chatId]) {
+                delete updated[chatId][userId];
               }
+              return updated;
             });
-
-            socketInstance.on('user_status_change', (data) => {
-              setUsers(prev => prev.map(user => 
-                user._id === data.userId 
-                  ? { ...user, isOnline: data.isOnline, lastSeen: data.lastSeen }
-                  : user
-              ));
-              
-              setChats(prev => prev.map(chat => ({
-                ...chat,
-                participants: chat.participants.map(participant => 
-                  participant._id === data.userId
-                    ? { ...participant, isOnline: data.isOnline, lastSeen: data.lastSeen }
-                    : participant
-                )
-              })));
-            });
-
-            socketInstance.on('message_notification', (data) => {
-              setChats(prev => prev.map(chat => {
-                if (chat._id === data.chatId) {
-                  return {
-                    ...chat,
-                    latestMessage: data.message,
-                    unreadCount: (chat.unreadCount || 0) + 1,
-                    updatedAt: new Date().toISOString()
-                  };
-                }
-                return chat;
-              }));
-            });
-
-          } catch (error) {
-            console.error('Failed to initialize socket:', error);
+            return;
           }
-        };
-        
-        initSocket();
-      } catch (error) {
-        console.error('Error parsing user data:', error);
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
+          setTypingUsers(prev => ({
+            ...prev,
+            [chatId]: {
+              ...prev[chatId],
+              [userId]: Date.now(),
+            },
+          }));
+        });
+      } catch (err) {
+        console.error('Socket init failed:', err);
       }
-    }
-  }, []);
+    };
 
-  useEffect(() => {
-    if (selectedChat && messages.length > 0 && currentUser) {
-      const markMessagesAsRead = async () => {
-        const unreadMessages = messages.filter(msg => 
-          msg.sender && msg.sender._id !== currentUser._id && 
-          (!msg.readBy || !msg.readBy.some(read => 
-            read.user === currentUser._id || read.user?._id === currentUser._id
-          ))
-        );
-        
-        for (const msg of unreadMessages) {
-          await markMessageAsRead(msg._id);
-        }
-        
-        setChats(prev => prev.map(chat => 
-          chat._id === selectedChat._id 
-            ? { ...chat, unreadCount: 0 }
-            : chat
-        ));
-      };
-      
-      markMessagesAsRead();
-    }
-  }, [selectedChat, messages, currentUser]);
+    init();
+
+    return () => {
+      if (socket) {
+        socket.disconnect();
+      }
+    };
+  }, []);
 
   const fetchCurrentUser = useCallback(async () => {
     try {
-      const response = await authAPI.getCurrentUser();
-      if (response.data.success) {
-        setCurrentUser(response.data.user);
-        localStorage.setItem('user', JSON.stringify(response.data.user));
+      const res = await authAPI.getCurrentUser();
+      if (res.data.success) {
+        setCurrentUser(res.data.user);
+        localStorage.setItem('user', JSON.stringify(res.data.user));
       }
-    } catch (error) {
-      console.error('Error fetching current user:', error);
+    } catch (err) {
+      console.error(err);
     }
   }, []);
 
   const fetchUsers = useCallback(async (search = '') => {
     try {
-      const response = await authAPI.searchUsers(search);
-      if (response.data.success) {
-        setUsers(response.data.users);
-      }
-    } catch (error) {
-      console.error('Error fetching users:', error);
+      const res = await authAPI.searchUsers(search);
+      if (res.data.success) setUsers(res.data.users);
+    } catch (err) {
+      console.error(err);
     }
   }, []);
 
@@ -217,202 +163,133 @@ export const useChat = () => {
     }
   }, []);
 
-  const getOrCreateChat = useCallback(async (userId) => {
-    try {
-      const response = await chatAPI.getOrCreateChat(userId);
-      if (response.data.success) {
-        return response.data.chat;
-      }
-    } catch (error) {
-      console.error('Error getting/creating chat:', error);
+  // Fetch user chats when current user is set
+  useEffect(() => {
+    if (currentUser) {
+      fetchUserChats();
     }
-    return null;
-  }, []);
+  }, [currentUser, fetchUserChats]);
 
-  const fetchMessages = useCallback(async (chatId, page = 1) => {
+  const fetchMessages = useCallback(async (chatId) => {
     try {
       setIsLoading(true);
-      const response = await messageAPI.getChatMessages(chatId, page);
-      if (response.data.success) {
-        const newMessages = response.data.messages;
-        if (page === 1) {
-          setMessages(newMessages);
-        } else {
-          setMessages(prev => [...newMessages, ...prev]);
-        }
-        scrollToBottom();
-        return response.data.pagination;
+      const res = await messageAPI.getChatMessages(chatId);
+      if (res.data.success) {
+        setMessages(res.data.messages);
       }
-    } catch (error) {
-      console.error('Error fetching messages:', error);
+    } catch (err) {
+      console.error(err);
     } finally {
       setIsLoading(false);
     }
+  }, []);
+
+  const sendMessage = useCallback(
+    async (chatId, content) => {
+      if (!content.trim()) return;
+
+      const tempId = `temp-${Date.now()}`;
+      const tempMsg = {
+        _id: tempId,
+        content,
+        sender: currentUserRef.current,
+        createdAt: new Date().toISOString(),
+        status: 'sending',
+      };
+
+      setMessages(prev => [...prev, tempMsg]);
+
+      try {
+        // include clientId so server can echo it back and we can replace the temp message cleanly
+        const res = await messageAPI.sendMessage({ chatId, content, clientId: tempId });
+        if (res.data.success) {
+          // If server already sent us the message via socket and replaced the temp, this will no-op
+          setMessages(prev =>
+            prev.map(m => (m._id === tempId ? res.data.message : m))
+          );
+          // No need to emit via socket here - backend emits when message is saved
+        }
+      } catch (err) {
+        setMessages(prev =>
+          prev.map(m => (m._id === tempId ? { ...m, status: 'failed' } : m))
+        );
+      }
+    },
+    []
+  );
+
+  const markMessageAsRead = useCallback(
+    async (messageId) => {
+      try {
+        socketEmit.markAsRead(messageId);
+        await messageAPI.markAsRead(messageId);
+      } catch (err) {
+        console.error(err);
+      }
+    },
+    []
+  );
+
+  const sendTypingIndicator = useCallback(
+    (chatId, isTyping) => {
+      socketEmit.typing(chatId, isTyping);
+    },
+    []
+  );
+
+  const handleSelectChat = useCallback(async (chat) => {
+    if (!chat?._id) return;
+    setSelectedChat(chat);
+    await fetchMessages(chat._id);
+    setChats(prev =>
+      prev.map(c => (c._id === chat._id ? { ...c, unreadCount: 0 } : c))
+    );
+    socketEmit.joinChat(chat._id);
+  }, [fetchMessages]);
+
+  const getOrCreateChat = useCallback(async (userId) => {
+    try {
+      const res = await chatAPI.getOrCreateChat(userId);
+      if (res.data.success) {
+        return res.data.chat;
+      }
+    } catch (err) {
+      console.error(err);
+    }
     return null;
   }, []);
 
-  const sendMessage = useCallback(async (chatId, content, messageType = 'text', mediaUrl = null) => {
-    if (!content.trim() && !mediaUrl) return;
-
-    const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const tempMessage = {
-      _id: tempId,
-      chatId,
-      content,
-      messageType,
-      mediaUrl,
-      sender: currentUser,
-      createdAt: new Date().toISOString(),
-      status: 'sending',
-      readBy: [{ user: currentUser, readAt: new Date().toISOString() }]
-    };
-
-    setMessages(prev => [...prev, tempMessage]);
-    scrollToBottom();
-    
-    try {
-      const response = await messageAPI.sendMessage({
-        chatId,
-        content,
-        messageType,
-        mediaUrl
-      });
-      
-      if (response.data.success) {
-        const realMessage = response.data.message;
-        
-        setMessages(prev => prev.map(msg => msg._id === tempId ? realMessage : msg));
-        
-        setChats(prev => prev.map(chat => 
-          chat._id === chatId 
-            ? {
-                ...chat,
-                latestMessage: realMessage,
-                updatedAt: new Date().toISOString()
-              }
-            : chat
-        ));
-        
-        // if (socket) {
-        //   socketEmit.sendMessage(socket, realMessage);
-        // }
-        
-        scrollToBottom();
-        return realMessage;
-      }
-    } catch (error) {
-      console.error('Error sending message:', error);
-      setMessages(prev => prev.map(msg => 
-        msg._id === tempId ? { ...msg, status: 'failed' } : msg
-      ));
-    }
-    return null;
-  }, [socket, currentUser]);
-
-  const markMessageAsRead = useCallback(async (messageId) => {
-    try {
-      if (socket) {
-        socketEmit.markAsRead(socket, messageId);
-      }
-      await messageAPI.markAsRead(messageId);
-    } catch (error) {
-      console.error('Error marking message as read:', error);
-    }
-  }, [socket]);
-
   const updateChatPreference = useCallback(async (chatId, preference) => {
     try {
-      const response = await chatAPI.updateChatPreference(chatId, preference);
-      if (response.data.success) {
-        setChats(prev => prev.map(chat => 
-          chat._id === chatId 
-            ? { ...chat, preference: response.data.preference }
-            : chat
-        ));
-        if (selectedChat?._id === chatId) {
-          setSelectedChat(prev => ({
-            ...prev,
-            preference: response.data.preference
-          }));
-        }
-        return response.data.preference;
-      }
-    } catch (error) {
-      console.error('Error updating chat preference:', error);
+      await chatAPI.updateChatPreference(chatId, preference);
+    } catch (err) {
+      console.error(err);
     }
-    return null;
-  }, [selectedChat]);
+  }, []);
 
-  const sendTypingIndicator = useCallback((chatId, isTyping) => {
-    if (socket) {
-      socketEmit.typing(socket, chatId, isTyping);
-    }
-  }, [socket]);
-
-  const scrollToBottom = () => {
+  const scrollToBottom = useCallback(() => {
     setTimeout(() => {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, 100);
-  };
+  }, []);
 
-  const getTotalUnreadCount = useCallback(() => {
-    return chats.reduce((total, chat) => {
-      if (chat._id !== selectedChat?._id && !chat.preference?.isArchived) {
-        return total + (chat.unreadCount || 0);
-      }
-      return total;
-    }, 0);
-  }, [chats, selectedChat]);
+  const getTotalUnreadCount = useCallback(
+    () =>
+      chats.reduce(
+        (t, c) =>
+          c._id !== selectedChat?._id && !c.preference?.isArchived
+            ? t + (c.unreadCount || 0)
+            : t,
+        0
+      ),
+    [chats, selectedChat]
+  );
 
   const getFilteredChats = useCallback(() => {
-    switch (activeTab) {
-      case 'archive':
-        return chats.filter(chat => chat.preference?.isArchived);
-      case 'favorites':
-        return chats.filter(chat => chat.preference?.isFavorite);
-      case 'locked':
-        return chats.filter(chat => chat.preference?.locked);
-      default:
-        return chats.filter(chat => !chat.preference?.isArchived);
-    }
+    if (activeTab === 'archive') return chats.filter(c => c.preference?.isArchived);
+    if (activeTab === 'favorites') return chats.filter(c => c.preference?.isFavorite);
+    return chats.filter(c => !c.preference?.isArchived);
   }, [chats, activeTab]);
-
-  const handleSelectChat = useCallback(async (chat) => {
-    if (!chat || !chat._id) return;
-    
-    setSelectedChat(chat);
-    await fetchMessages(chat._id);
-    
-    if (chat.unreadCount > 0) {
-      setChats(prev => prev.map(c => 
-        c._id === chat._id 
-          ? { ...c, unreadCount: 0 }
-          : c
-      ));
-    }
-    
-    scrollToBottom();
-  }, [fetchMessages]);
-
-  useEffect(() => {
-    if (currentUser) {
-      const interval = setInterval(() => {
-        fetchUserChats(activeTab);
-      }, 30000);
-
-      return () => clearInterval(interval);
-    }
-  }, [currentUser, activeTab, fetchUserChats]);
-
-  useEffect(() => {
-    if (currentUser) {
-      if (activeTab === 'users') {
-        fetchUsers();
-      } else {
-        fetchUserChats(activeTab);
-      }
-    }
-  }, [currentUser, activeTab, fetchUserChats, fetchUsers]);
 
   return {
     currentUser,
@@ -431,11 +308,11 @@ export const useChat = () => {
     fetchCurrentUser,
     fetchUsers,
     fetchUserChats,
-    getOrCreateChat,
     fetchMessages,
     sendMessage,
-    markMessageAsRead,
+    getOrCreateChat,
     updateChatPreference,
+    markMessageAsRead,
     sendTypingIndicator,
     scrollToBottom,
     getTotalUnreadCount,
