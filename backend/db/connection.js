@@ -1,15 +1,27 @@
 const mongoose = require("mongoose");
+require('dotenv').config();
 
-const url = "mongodb+srv://vivek:Vivek%402006@chattingapp.aayqz.mongodb.net/";
+const url = process.env.MONGODB_URI || "mongodb://localhost:27017/chatapp";
 
 mongoose
     .connect(url, {
-        useNewUrlParser: true, // Use the new URL parser
-        useUnifiedTopology: true, // Ensure compatibility with the MongoDB driver
+        useNewUrlParser: true,
+        useUnifiedTopology: true,
     })
     .then(() => {
-        console.log("Connected to MongoDB");
+        console.log("✅ Connected to MongoDB successfully");
     })
     .catch((error) => {
-        console.error("Unable to connect to MongoDB", error);
+        console.error("❌ Unable to connect to MongoDB:", error.message);
+        process.exit(1);
     });
+
+    mongoose.connection.on('disconnected', () => {
+    console.log('⚠️ MongoDB disconnected');
+});
+
+mongoose.connection.on('error', (error) => {
+    console.error('❌ MongoDB connection error:', error);
+});
+
+module.exports = mongoose;
