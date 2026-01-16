@@ -43,14 +43,12 @@ const userSchema = new mongoose.Schema(
       default: false
     },
     lastSeen: Date,
-    // PIN protection for archived chats
     pinHash: { type: String, default: null },
     pinEnabled: { type: Boolean, default: false }
   },
   { timestamps: true }
 );
 
-// Create indexes for better query performance
 userSchema.index({ userId: 1 });
 userSchema.index({ clerkUserId: 1 });
 userSchema.index({ email: 1 });

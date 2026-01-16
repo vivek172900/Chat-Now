@@ -25,13 +25,11 @@ const ConversationItem = ({
 }) => {
   const [showDropdown, setShowDropdown] = useState(false);
 
-  // Get other participant for 1:1 chat
   const getOtherParticipant = () => {
     if (chat.isGroupChat) return null;
 
     if (!chat.participants || chat.participants.length < 2) return null;
 
-    // Find the participant who is NOT the current user
     const otherParticipant = chat.participants.find(
       participant => participant._id !== currentUser?._id
     );
@@ -39,30 +37,25 @@ const ConversationItem = ({
     return otherParticipant;
   };
 
-  // Get display ID for chat - UPDATED to show userId
   const getDisplayId = () => {
     if (chat.isGroupChat) {
       return chat.chatName || `Group ${chat._id?.slice(-4) || ''}`;
     }
 
     const otherParticipant = getOtherParticipant();
-    // Show userId if available, otherwise fallback to truncated _id
     return otherParticipant?.userId || otherParticipant?._id?.slice(-8) || 'Unknown';
   };
 
-  // Get display avatar for chat - using first character of userId or ID
   const getDisplayAvatar = () => {
     if (chat.isGroupChat) {
       return chat.chatName?.charAt(0)?.toUpperCase() || 'G';
     }
 
     const otherParticipant = getOtherParticipant();
-    // Use first character of userId if available, otherwise use first character of _id
     const displayId = otherParticipant?.userId || otherParticipant?._id || 'U';
     return displayId.charAt(0).toUpperCase();
   };
 
-  // Get display name with userId in parentheses for reference - optional
   const getDisplayNameWithId = () => {
     if (chat.isGroupChat) {
       return chat.chatName || `Group Chat`;
@@ -75,11 +68,9 @@ const ConversationItem = ({
       return otherParticipant?.username || `User ${otherParticipant?._id?.slice(-4)}`;
     }
 
-    // Show just the userId (cleaner)
     return userId;
   };
 
-  // Check if other participant is online
   const isOtherParticipantOnline = () => {
     if (chat.isGroupChat) return false;
 
@@ -138,7 +129,6 @@ const ConversationItem = ({
     }
 
     if (chat.isGroupChat) {
-      // For group chats, show sender's userId if available
       const senderId = message.sender?.userId || message.sender?._id?.slice(-4);
       return `${senderId || 'Someone'}: ${message.content || 'Media'}`;
     }
@@ -147,7 +137,6 @@ const ConversationItem = ({
   };
 
   const handlePreferenceToggle = async (type) => {
-    // Special handling for archiving locked chats
     if (type === 'isArchived' && preference.locked) {
       alert('This chat is locked. Unlock it first to archive.');
       setShowDropdown(false);
@@ -155,9 +144,7 @@ const ConversationItem = ({
     }
 
     if (type === 'locked') {
-      // If locking and user doesn't have PIN, prompt to set one
       if (!preference.locked && !currentUser?.hasPin) {
-        // Ask parent to open PIN setup
         if (typeof onRequestSetPin === 'function') {
           onRequestSetPin(chat._id);
         } else {
@@ -167,7 +154,6 @@ const ConversationItem = ({
         return;
       }
 
-      // If unlocking, request verification
       if (preference.locked) {
         if (typeof onRequestVerifyPin === 'function') {
           const ok = await onRequestVerifyPin(chat._id);
@@ -194,7 +180,6 @@ const ConversationItem = ({
     setShowDropdown(false);
   };
 
-  // Extract the main color from the bubbleUser class
   const getThemeColor = () => {
     if (!currentTheme?.bubbleUser) return 'blue';
 
@@ -218,7 +203,6 @@ const ConversationItem = ({
 
   const themeColor = getThemeColor();
 
-  // Map theme colors to corresponding Tailwind classes for selection highlight
   const getSelectedStyle = () => {
     const colorStyles = {
       blue: 'bg-blue-500/20 border-l-4 border-blue-500',
@@ -243,7 +227,6 @@ const ConversationItem = ({
         className={`p-3 rounded-lg cursor-pointer transition-colors ${selectedBgColor}`}
       >
         <div className="flex items-center space-x-3">
-          {/* Avatar */}
           <div className="relative">
             {chat.isGroupChat ? (
               <div className="relative">
@@ -264,14 +247,12 @@ const ConversationItem = ({
                   </div>
                 )}
 
-                {/* Online status */}
                 {isOtherParticipantOnline() && (
                   <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-gray-800"></div>
                 )}
               </>
             )}
 
-            {/* Preference indicators */}
             <div className="absolute -top-1 -right-1 flex space-x-1">
               {preference.locked && (
                 <div className="w-4 h-4 bg-yellow-500 rounded-full flex items-center justify-center">
@@ -291,14 +272,12 @@ const ConversationItem = ({
             </div>
           </div>
 
-          {/* Chat info */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center space-x-2">
                 <p className="text-white font-medium truncate">
                   {getDisplayNameWithId()}
                 </p>
-                {/* Show truncated _id as a small badge for reference */}
                 {!chat.isGroupChat && otherParticipant?._id && !otherParticipant?.userId && (
                   <span className="text-xs text-gray-400 bg-gray-700 px-1 py-0.5 rounded">
                     ID: {otherParticipant._id.slice(-4)}
@@ -328,7 +307,6 @@ const ConversationItem = ({
         </div>
       </div>
 
-      {/* Dropdown menu */}
       <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
         <div className="relative">
           <button

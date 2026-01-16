@@ -16,8 +16,7 @@ mongoose
         process.exit(1);
     });
 
-// Handle connection events
-mongoose.connection.on('disconnected', () => {
+    mongoose.connection.on('disconnected', () => {
     console.log('⚠️ MongoDB disconnected');
 });
 

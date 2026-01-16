@@ -4,20 +4,16 @@ import { X, User, Clock, MapPin, Calendar, Copy } from 'lucide-react';
 const ShowProfile = ({ user, isOpen, onClose, getDisplayId, getDisplayAvatar }) => {
   if (!isOpen || !user) return null;
 
-  // Helper function to parse date (handles both string and MongoDB Date format)
   const parseDate = (dateValue) => {
     if (!dateValue) return null;
     
-    // Handle MongoDB Date format with $date
     if (dateValue.$date) {
       return new Date(dateValue.$date);
     }
     
-    // Handle regular date string or Date object
     return new Date(dateValue);
   };
 
-  // Format join date
   const formatJoinDate = (dateValue) => {
     const date = parseDate(dateValue);
     if (!date) return 'Not available';
@@ -29,7 +25,6 @@ const ShowProfile = ({ user, isOpen, onClose, getDisplayId, getDisplayAvatar }) 
     });
   };
 
-  // Format time for "Last seen at" (like WhatsApp)
   const formatLastSeenTime = (dateValue) => {
     const date = parseDate(dateValue);
     if (!date) return 'Never';
@@ -40,23 +35,19 @@ const ShowProfile = ({ user, isOpen, onClose, getDisplayId, getDisplayAvatar }) 
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
     
-    // Today
     if (diffDays === 0) {
       if (diffMins < 1) return 'Just now';
       if (diffMins < 60) return `${diffMins} minute${diffMins !== 1 ? 's' : ''} ago`;
       if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
     }
     
-    // Yesterday
     if (diffDays === 1) return 'Yesterday';
     
-    // This week
     if (diffDays < 7) {
       const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
       return dayNames[date.getDay()];
     }
     
-    // More than a week ago
     if (date.getFullYear() === now.getFullYear()) {
       return date.toLocaleDateString('en-US', {
         month: 'short',
@@ -64,7 +55,6 @@ const ShowProfile = ({ user, isOpen, onClose, getDisplayId, getDisplayAvatar }) 
       });
     }
     
-    // Different year
     return date.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
@@ -72,7 +62,6 @@ const ShowProfile = ({ user, isOpen, onClose, getDisplayId, getDisplayAvatar }) 
     });
   };
 
-  // Get user status based on online status and last seen (like WhatsApp)
   const getUserStatus = () => {
     if (user.isOnline) {
       return {
@@ -97,7 +86,6 @@ const ShowProfile = ({ user, isOpen, onClose, getDisplayId, getDisplayAvatar }) 
     };
   };
 
-  // Get detailed last seen information
   const getDetailedLastSeen = () => {
     if (!user.lastSeen) return 'Never';
     
@@ -133,31 +121,25 @@ const ShowProfile = ({ user, isOpen, onClose, getDisplayId, getDisplayAvatar }) 
     return dayPrefix + timeString;
   };
 
-  // Get display ID - using passed function or fallback (renamed to avoid conflict)
   const getUserDisplayId = () => {
     if (typeof getDisplayId === 'function') {
       return getDisplayId(user);
     }
-    // Fallback if function not provided
     return user?.userId || user?._id?.slice(-8) || 'Unknown';
   };
 
-  // Get display avatar - using passed function or fallback (renamed to avoid conflict)
   const getUserDisplayAvatar = () => {
     if (typeof getDisplayAvatar === 'function') {
       return getDisplayAvatar(user);
     }
-    // Fallback if function not provided
     const displayId = user?.userId || user?._id || 'U';
     return displayId.charAt(0).toUpperCase();
   };
 
-  // Copy user ID to clipboard
   const copyUserIdToClipboard = async () => {
     const userId = getUserDisplayId();
     try {
       await navigator.clipboard.writeText(userId);
-      // You could add a toast notification here
       alert(`Copied user ID: ${userId}`);
     } catch (err) {
       console.error('Failed to copy user ID:', err);
@@ -171,17 +153,14 @@ const ShowProfile = ({ user, isOpen, onClose, getDisplayId, getDisplayAvatar }) 
 
   return (
     <>
-      {/* Backdrop */}
       <div 
         className="fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity"
         onClick={onClose}
       />
       
-      {/* Profile Modal */}
       <div className="fixed inset-0 z-50 overflow-y-auto">
         <div className="flex min-h-full items-center justify-center p-4">
           <div className="relative bg-gray-800 rounded-xl w-full max-w-4xl overflow-hidden shadow-2xl">
-            {/* Header with close button */}
             <div className="flex justify-between items-center p-4 border-b border-gray-700">
               <h3 className="text-lg font-semibold text-white">Profile Information</h3>
               <button
@@ -192,9 +171,7 @@ const ShowProfile = ({ user, isOpen, onClose, getDisplayId, getDisplayAvatar }) 
               </button>
             </div>
 
-            {/* Profile Content - Split Layout with Equal Width */}
             <div className="flex flex-col lg:flex-row">
-              {/* Left Side - User Icon (Fixed 50% width) */}
               <div className="lg:w-1/2 p-8 border-r border-gray-700 flex flex-col items-center justify-center bg-gradient-to-b from-gray-900 to-gray-800 min-h-[500px]">
                 <div className="relative mb-8">
                   <div className="w-56 h-56 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center overflow-hidden border-8 border-gray-700 shadow-2xl">
@@ -211,7 +188,6 @@ const ShowProfile = ({ user, isOpen, onClose, getDisplayId, getDisplayAvatar }) 
                     )}
                   </div>
                   
-                  {/* Online Status Badge */}
                   <div className={`absolute bottom-6 right-6 w-10 h-10 ${status.color} rounded-full border-4 border-gray-800`} />
                 </div>
                 
@@ -227,14 +203,12 @@ const ShowProfile = ({ user, isOpen, onClose, getDisplayId, getDisplayAvatar }) 
                     </span>
                   </div>
                   
-                  {/* User Type Badge */}
                   <div className={`inline-block px-4 py-2 rounded-full mb-6 ${user.userId ? 'bg-blue-900/50 text-blue-300 border border-blue-700' : 'bg-gray-700 text-gray-300 border border-gray-600'}`}>
                     <span className="text-sm font-medium">
                       {user.userId ? 'Registered User' : 'Guest User'}
                     </span>
                   </div>
                   
-                  {/* Quick Actions */}
                   <div className="flex flex-col sm:flex-row gap-3 mt-8 justify-center">
                     <button
                       onClick={copyUserIdToClipboard}
@@ -248,7 +222,6 @@ const ShowProfile = ({ user, isOpen, onClose, getDisplayId, getDisplayAvatar }) 
                     </button>
                   </div>
 
-                  {/* Database Info */}
                   <div className="mt-8 p-4 bg-gray-900/50 rounded-xl border border-gray-700">
                     <p className="text-sm text-gray-400 mb-2">Database ID</p>
                     <div className="flex items-center justify-center gap-2">
@@ -269,9 +242,7 @@ const ShowProfile = ({ user, isOpen, onClose, getDisplayId, getDisplayAvatar }) 
                 </div>
               </div>
 
-              {/* Right Side - Details (Fixed 50% width) */}
               <div className="lg:w-1/2 p-8 overflow-y-auto max-h-[600px]">
-                {/* About Section */}
                 <div className="mb-8">
                   <h4 className="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">About</h4>
                   <div className="bg-gray-900 rounded-xl p-5 border border-gray-700">
@@ -281,11 +252,9 @@ const ShowProfile = ({ user, isOpen, onClose, getDisplayId, getDisplayAvatar }) 
                   </div>
                 </div>
 
-                {/* User Information Grid */}
                 <h4 className="text-sm font-medium text-gray-400 mb-4 uppercase tracking-wider">User Information</h4>
                 
                 <div className="space-y-4">
-                  {/* Account Created */}
                   <div className="flex items-center gap-4 bg-gray-900 rounded-xl p-4 border border-gray-700">
                     <div className="w-12 h-12 rounded-xl bg-green-900/30 flex items-center justify-center flex-shrink-0">
                       <Calendar className="w-6 h-6 text-green-400" />
@@ -298,7 +267,6 @@ const ShowProfile = ({ user, isOpen, onClose, getDisplayId, getDisplayAvatar }) 
                     </div>
                   </div>
 
-                  {/* Last Seen */}
                   <div className="flex items-center gap-4 bg-gray-900 rounded-xl p-4 border border-gray-700">
                     <div className="w-12 h-12 rounded-xl bg-yellow-900/30 flex items-center justify-center flex-shrink-0">
                       <Clock className="w-6 h-6 text-yellow-400" />
@@ -314,7 +282,6 @@ const ShowProfile = ({ user, isOpen, onClose, getDisplayId, getDisplayAvatar }) 
                     </div>
                   </div>
 
-                  {/* Location */}
                   <div className="flex items-center gap-4 bg-gray-900 rounded-xl p-4 border border-gray-700">
                     <div className="w-12 h-12 rounded-xl bg-purple-900/30 flex items-center justify-center flex-shrink-0">
                       <MapPin className="w-6 h-6 text-purple-400" />
@@ -326,7 +293,6 @@ const ShowProfile = ({ user, isOpen, onClose, getDisplayId, getDisplayAvatar }) 
                   </div>
                 </div>
 
-                {/* Additional Info */}
                 {user.customFields && Object.keys(user.customFields).length > 0 && (
                   <div className="mt-8 pt-8 border-t border-gray-700">
                     <h4 className="text-sm font-medium text-gray-400 mb-4 uppercase tracking-wider">Additional Information</h4>

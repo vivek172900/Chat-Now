@@ -7,7 +7,6 @@ const initiateCall = async (req, res) => {
     const { chatId, callType, receiverIds } = req.body;
     const caller = req.user;
 
-    // For one-on-one call
     if (chatId) {
       const chat = await Chat.findById(chatId);
       if (!chat) {
@@ -18,7 +17,6 @@ const initiateCall = async (req, res) => {
         return res.status(403).json({ success: false, error: 'You are not a participant of this chat' });
       }
 
-      // Get receiver (other participant)
       const receiver = chat.participants.find(
         participant => participant.toString() !== caller._id.toString()
       );
@@ -45,7 +43,6 @@ const initiateCall = async (req, res) => {
       });
     }
 
-    // For group call or direct call to multiple users
     if (receiverIds && Array.isArray(receiverIds)) {
       const receivers = await User.find({ _id: { $in: receiverIds } });
       
@@ -91,7 +88,6 @@ const updateCallStatus = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Call not found' });
     }
 
-    // Check if user is part of the call
     const isParticipant = 
       call.caller.toString() === currentUser._id.toString() ||
       call.receivers.some(receiver => receiver.toString() === currentUser._id.toString());
@@ -182,7 +178,6 @@ const getCallDetails = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Call not found' });
     }
 
-    // Check if user is part of the call
     const isParticipant = 
       call.caller._id.toString() === currentUser._id.toString() ||
       call.receivers.some(receiver => receiver._id.toString() === currentUser._id.toString());

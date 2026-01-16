@@ -12,7 +12,6 @@ const RequireUserId = ({ children }) => {
     const check = async () => {
       const token = localStorage.getItem('token');
       if (!token) {
-        // Not logged in
         navigate('/login', { replace: true });
         return;
       }
@@ -22,19 +21,16 @@ const RequireUserId = ({ children }) => {
         if (!mounted) return;
 
         if (!(res.data && res.data.success && res.data.user)) {
-          // Something wrong with session, go to login
           navigate('/login', { replace: true });
           return;
         }
 
         const user = res.data.user;
         if (!user.userId || String(user.userId).length < 6) {
-          // enforce userId policy
           navigate('/setup-user-id', { replace: true });
           return;
         }
 
-        // All good - allow access
         setLoading(false);
       } catch (err) {
         console.error('RequireUserId check failed:', err);

@@ -1,6 +1,5 @@
 const mongoose = require("mongoose");
 
-// DELETE EXISTING MODEL TO CLEAR CACHE
 if (mongoose.models.Message) {
   delete mongoose.models.Message;
   delete mongoose.connection.models.Message;

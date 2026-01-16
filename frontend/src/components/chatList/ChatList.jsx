@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Search, Users as UsersIcon, Archive, Heart, Lock } from 'lucide-react';
 import ConversationItem from './ConversationItem';
 import GroupCreateModal from './GroupCreateModal';
@@ -8,6 +8,7 @@ const ChatList = ({
   activeTab,
   chats,
   users,
+  fetchUsers,
   isLoading,
   selectedChat,
   searchQuery,
@@ -20,9 +21,11 @@ const ChatList = ({
   onRequestVerifyPin,
   currentUser,
   currentTheme,
-  onCreateGroup
+  onCreateGroup,
+  openGroup,
+  setOpenGroup,
+  handleOpenGroupModal
 }) => {
-  const [openGroup, setOpenGroup] = useState(false);
   const getHeaderTitle = () => {
     switch (activeTab) {
       case 'chats': return 'Chats';
@@ -70,7 +73,7 @@ const ChatList = ({
             onDeleteChat={onDeleteChat}
             onRequestSetPin={onRequestSetPin}
             onRequestVerifyPin={onRequestVerifyPin}
-            currentUser={currentUser} // Pass currentUser to ConversationItem
+            currentUser={currentUser}
             currentTheme={currentTheme}
           />
         ))}
@@ -79,6 +82,7 @@ const ChatList = ({
   };
 
   const renderUsersTab = () => {
+    console.log(users)
     const filteredUsers = users.filter(user => {
       const q = searchQuery.toLowerCase();
       return (
@@ -88,10 +92,10 @@ const ChatList = ({
       );
     });
 
-    // Filter out current user from users list
     const filteredUsersWithoutSelf = filteredUsers.filter(
       user => user._id !== currentUser?._id
     );
+    // console.log("filteredUsersWithoutSelf:", users);
 
     if (filteredUsersWithoutSelf.length === 0) {
       return (
@@ -175,7 +179,6 @@ const ChatList = ({
 
   return (
     <div className="w-80 bg-gray-800 border-r border-gray-700 flex flex-col">
-      {/* Header */}
       <div className="p-4 border-b border-gray-700">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-3">
@@ -189,7 +192,7 @@ const ChatList = ({
 
           {activeTab === 'chats' && (
             <button
-              onClick={() => setOpenGroup(true)}
+              onClick={handleOpenGroupModal}
               className="ml-auto flex items-center gap-2 px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors"
             >
               <Plus className="w-4 h-4" />
@@ -212,7 +215,6 @@ const ChatList = ({
         )}
       </div>
 
-      {/* Content */}
       <div className="flex-1 overflow-y-auto">
         {isLoading ? (
           <div className="flex items-center justify-center h-32">

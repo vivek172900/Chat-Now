@@ -8,7 +8,6 @@ const {
 } = require('../controllers/callController');
 const { authenticate, requireUserId } = require('../middleware/auth');
 
-// All routes require authenticated user and a userId
 router.use(authenticate, requireUserId);
 
 router.post('/', initiateCall);

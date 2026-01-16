@@ -4,10 +4,8 @@ const User = require("../models/User");
 
 const router = express.Router();
 
-// Note: This route uses raw body middleware from main app
-
 router.post("/clerk", async (req, res) => {
-  console.log("🔔 Clerk webhook received");
+  console.log("Clerk webhook received");
   
   const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
 
@@ -36,7 +34,6 @@ router.post("/clerk", async (req, res) => {
       "svix-signature": svix_signature,
     });
     
-    console.log("✅ Webhook verified, type:", event.type);
   } catch (err) {
     console.error("Webhook verification failed:", err.message);
     return res.status(400).json({ error: "Invalid webhook signature" });
@@ -103,18 +100,18 @@ async function handleUserCreated(data) {
       lastSeen: new Date()
     });
     
-    console.log("✅ User created:", user.email);
+    console.log("User created:", user.email);
   } catch (error) {
     console.error("Error creating user:", error.message);
     if (error.code === 11000) {
-      console.log("⚠️ User already exists");
+      console.log("User already exists");
     }
   }
 }
 
 async function handleUserUpdated(data) {
   try {
-    console.log("🔄 Updating user:", data.id);
+    console.log("Updating user:", data.id);
     
     const primaryEmail = data.email_addresses?.find(
       email => email.id === data.primary_email_address_id
@@ -132,7 +129,7 @@ async function handleUserUpdated(data) {
       { new: true }
     );
     
-    console.log("✅ User updated");
+    console.log("User updated");
   } catch (error) {
     console.error("Error updating user:", error.message);
   }
@@ -156,7 +153,7 @@ async function handleSessionCreated(data) {
 
 async function handleSessionEnded(data) {
   try {
-    console.log("🔒 User logout:", data.user_id);
+    console.log("User logout:", data.user_id);
     
     await User.findOneAndUpdate(
       { clerkUserId: data.user_id },
@@ -172,7 +169,7 @@ async function handleSessionEnded(data) {
 
 async function handleUserDeleted(data) {
   try {
-    console.log("🗑️ Deleting user:", data.id);
+    console.log("Deleting user:", data.id);
     
     await User.findOneAndDelete({ clerkUserId: data.id });
   } catch (error) {

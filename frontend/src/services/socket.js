@@ -45,9 +45,6 @@ export const initializeSocket = () => {
   return socket;
 };
 
-/**
- * Disconnect socket (on logout)
- */
 export const disconnectSocket = () => {
   if (socket) {
     socket.disconnect();
@@ -55,9 +52,6 @@ export const disconnectSocket = () => {
   }
 };
 
-/**
- * Socket emit helpers
- */
 export const socketEmit = {
   joinChat(chatId) {
     if (!socket) return;

@@ -12,7 +12,6 @@ const getOrCreateChat = async (req, res) => {
       return res.status(400).json({ success: false, error: 'User ID is required' });
     }
 
-    // Check if chat already exists between two users
     let chat = await Chat.findOne({
       isGroupChat: false,
       participants: { $all: [currentUser._id, userId], $size: 2 }
@@ -20,7 +19,6 @@ const getOrCreateChat = async (req, res) => {
       .populate('latestMessage');
 
     if (chat) {
-      // Get chat preferences
       const preference = await ChatPreference.findOne({
         user: currentUser._id,
         chat: chat._id
@@ -35,7 +33,6 @@ const getOrCreateChat = async (req, res) => {
       });
     }
 
-    // Create new chat
     const otherUser = await User.findById(userId);
     if (!otherUser) {
       return res.status(404).json({ success: false, error: 'User not found' });
@@ -48,11 +45,9 @@ const getOrCreateChat = async (req, res) => {
 
     await chat.save();
 
-    // Populate participants
     chat = await Chat.findById(chat._id)
       .populate('participants', '-__v -createdAt -updatedAt');
 
-    // Emit new_chat event to participants so their clients can add it to their chat lists
     try {
       const io = require('../socket/socket').getIO();
       chat.participants.forEach(p => {
@@ -87,15 +82,12 @@ const createGroupChat = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Chat name and participants are required' });
     }
 
-    // Add current user to participants
     const allParticipants = [...new Set([currentUser._id.toString(), ...participants])];
 
-    // Minimum 2 members total (including current user)
     if (allParticipants.length < 2) {
       return res.status(400).json({ success: false, error: 'Group chat must have at least 2 participants' });
     }
 
-    // Check if all participants exist
     const usersExist = await User.find({ 
       _id: { $in: allParticipants } 
     }).select('_id');
@@ -117,7 +109,6 @@ const createGroupChat = async (req, res) => {
       .populate('participants', '-__v -createdAt -updatedAt')
       .populate('admin', '-__v -createdAt -updatedAt');
 
-    // Emit new_chat to participants so their clients add it
     try {
       const io = require('../socket/socket').getIO();
       populatedChat.participants.forEach(p => {
@@ -149,7 +140,6 @@ const getUserChats = async (req, res) => {
 
     console.log('GET /api/chats called by user:', currentUser?._id);
 
-    // Get all chats where user is a participant
     let chats = await Chat.find({
       participants: currentUser._id
     })
@@ -160,7 +150,6 @@ const getUserChats = async (req, res) => {
 
     console.log('Found chats count:', chats.length);
 
-    // Get chat preferences
     const preferences = await ChatPreference.find({
       user: currentUser._id,
       chat: { $in: chats.map(chat => chat._id) }
@@ -171,13 +160,11 @@ const getUserChats = async (req, res) => {
       return map;
     }, {});
 
-    // Attach preferences to chats
     chats = chats.map(chat => ({
       ...chat.toObject(),
       preference: preferenceMap[chat._id] || { isArchived: false, isFavorite: false, mutedUntil: null }
     }));
 
-    // Filter based on request
     if (filter === 'unarchived') {
       chats = chats.filter(chat => !chat.preference.isArchived);
     } else if (filter === 'archived') {
@@ -186,7 +173,6 @@ const getUserChats = async (req, res) => {
       chats = chats.filter(chat => chat.preference.isFavorite);
     }
 
-    // Get unread counts for each chat
     const unreadCounts = await Promise.all(
       chats.map(async (chat) => {
         const count = await Message.countDocuments({
@@ -203,7 +189,6 @@ const getUserChats = async (req, res) => {
       return map;
     }, {});
 
-    // Add unread counts to chats
     chats = chats.map(chat => ({
       ...chat,
       unreadCount: unreadMap[chat._id] || 0
@@ -260,7 +245,6 @@ const updateGroupChat = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Chat not found' });
     }
 
-    // Check if user is admin
     if (chat.admin.toString() !== currentUser._id.toString()) {
       return res.status(403).json({ success: false, error: 'Only admin can update group chat' });
     }
@@ -275,7 +259,6 @@ const updateGroupChat = async (req, res) => {
       .populate('participants', '-__v -createdAt -updatedAt')
       .populate('admin', '-__v -createdAt -updatedAt');
 
-    // Emit update events to chat room and to participants (so newly added members see it)
     try {
       const io = require('../socket/socket').getIO();
       io.to(`chat_${updatedChat._id}`).emit('chat_updated', { chat: updatedChat });
@@ -306,18 +289,15 @@ const deleteChat = async (req, res) => {
 
     const participantIds = chat.participants.map(p => p.toString());
 
-    // Ensure user is a participant
     if (!participantIds.includes(currentUser._id.toString())) {
       return res.status(403).json({ success: false, error: 'Not authorized' });
     }
 
-    // Delete chat messages and preferences
     await Message.deleteMany({ chat: chatId });
     await ChatPreference.deleteMany({ chat: chatId });
 
     await Chat.findByIdAndDelete(chatId);
 
-    // Emit chat_deleted to participants so clients can remove it from lists
     try {
       const io = require('../socket/socket').getIO();
       participantIds.forEach(pid => {

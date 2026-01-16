@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Search, Check } from 'lucide-react';
+import { X, Search, Users } from 'lucide-react';
 
 const GroupCreateModal = ({ open, onCreate, onClose, users, currentUser }) => {
   const [groupName, setGroupName] = useState('');
@@ -9,52 +9,78 @@ const GroupCreateModal = ({ open, onCreate, onClose, users, currentUser }) => {
   const [error, setError] = useState('');
   const [exactMatch, setExactMatch] = useState(null);
   const [searchError, setSearchError] = useState('');
+  const [filteredUsers, setFilteredUsers] = useState([]);
+  const [searchResults, setSearchResults] = useState([]);
 
   useEffect(() => {
-    if (!open) {
+    if (open) {
       setGroupName('');
       setSearchTerm('');
       setSelectedUsers([]);
       setError('');
       setExactMatch(null);
       setSearchError('');
+      setSearchResults([]);
+      
+      console.log('Modal opened. Users prop:', users);
+      console.log('Current user ID:', currentUser?._id);
+      
+      const filtered = users.filter(user => user._id !== currentUser?._id);
+      console.log('Filtered users count:', filtered.length);
+      console.log('Filtered users:', filtered);
+      
+      setFilteredUsers(filtered);
     }
-  }, [open]);
+  }, [open, users, currentUser]);
 
   const handleSearch = () => {
     if (!searchTerm.trim()) {
       setSearchError('Enter username or userId');
       setExactMatch(null);
+      setSearchResults([]);
+      return;
+    }
+
+    if (searchTerm.trim().length < 5) {
+      setSearchError('Enter at least 5 characters');
+      setExactMatch(null);
+      setSearchResults([]);
       return;
     }
 
     setSearchError('');
-    console.log(users)
     
-    const foundUser = users.find(user => 
-      (user.username === searchTerm.trim() && user._id !== currentUser?._id) || 
-      (user.userId === searchTerm.trim() && user._id !== currentUser?._id) ||
-      (user._id === searchTerm.trim() && user._id !== currentUser?._id)
-    );
-
-    if (foundUser) {
-      setExactMatch(foundUser);
-    } else {
+    const searchTermLower = searchTerm.trim().toLowerCase();
+    console.log('Searching for:', searchTermLower);
+    console.log('Filtered users to search in:', filteredUsers);
+    
+    const foundUsers = filteredUsers.filter(user => {
+      const matches = (user.username && user.username.toLowerCase().includes(searchTermLower)) || 
+                     (user.userId && user.userId.toLowerCase().includes(searchTermLower));
+      console.log(`User ${user.username} (@${user.userId}) matches:`, matches);
+      return matches;
+    });
+    
+    console.log('Found users:', foundUsers.length, foundUsers);
+    
+    if (foundUsers.length > 0) {
+      setSearchResults(foundUsers);
       setExactMatch(null);
-      setSearchError(`No user found: "${searchTerm}"`);
+    } else {
+      setSearchResults([]);
+      setExactMatch(null);
+      setSearchError(`No users found matching "${searchTerm}"`);
     }
   };
 
-  const handleAddSelectedUser = () => {
-    if (exactMatch) {
-      const isSelected = selectedUsers.some(u => u._id === exactMatch._id);
-      if (!isSelected) {
-        setSelectedUsers([...selectedUsers, exactMatch]);
-        setExactMatch(null);
-        setSearchTerm('');
-      } else {
-        setSearchError('User already selected');
-      }
+  const handleAddSelectedUser = (user) => {
+    const isSelected = selectedUsers.some(u => u._id === user._id);
+    if (!isSelected) {
+      setSelectedUsers([...selectedUsers, user]);
+      setSearchTerm('');
+      setSearchResults([]);
+    } else {
+      setSearchError('User already selected');
     }
   };
 
@@ -137,6 +163,7 @@ const GroupCreateModal = ({ open, onCreate, onClose, users, currentUser }) => {
             <label className="block text-sm font-medium text-gray-300 mb-2">
               Add Members (select at least 1)
             </label>
+            
             <div className="mb-3">
               <div className="flex gap-2">
                 <input
@@ -146,21 +173,23 @@ const GroupCreateModal = ({ open, onCreate, onClose, users, currentUser }) => {
                     setSearchTerm(e.target.value);
                     setSearchError('');
                     setExactMatch(null);
+                    setSearchResults([]);
                   }}
                   onKeyPress={handleKeyPress}
-                  placeholder="Enter exact username or userId"
+                  placeholder="Search username or userId (min. 5 chars)"
                   className="flex-1 bg-gray-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <button
                   onClick={handleSearch}
-                  className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg flex items-center gap-2"
+                  disabled={filteredUsers.length === 0}
+                  className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Search className="w-4 h-4" />
                   Search
                 </button>
               </div>
               <p className="text-xs text-gray-400 mt-1">
-                Must match exactly (case-sensitive)
+                Enter at least 5 characters (case-insensitive)
               </p>
             </div>
 
@@ -170,26 +199,36 @@ const GroupCreateModal = ({ open, onCreate, onClose, users, currentUser }) => {
               </div>
             )}
 
-            {exactMatch && (
-              <div className="mb-3 p-3 bg-gray-700 rounded-lg border border-gray-600">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full flex items-center justify-center text-white font-semibold">
-                      {exactMatch.username?.charAt(0)?.toUpperCase() || 'U'}
-                    </div>
-                    <div>
-                      <p className="text-white font-medium">{exactMatch.username}</p>
-                      {exactMatch.userId && (
-                        <p className="text-gray-300 text-sm">@{exactMatch.userId}</p>
-                      )}
-                    </div>
+            {searchResults.length > 0 && (
+              <div className="mb-3">
+                <div className="bg-gray-700 rounded-lg border border-gray-600 p-3">
+                  <p className="text-gray-300 text-sm mb-2">
+                    Found {searchResults.length} user{searchResults.length !== 1 ? 's' : ''}:
+                  </p>
+                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                    {searchResults.map(user => (
+                      <div key={user._id} className="flex items-center justify-between p-2 bg-gray-800 rounded">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full flex items-center justify-center text-white font-semibold">
+                            {user.username?.charAt(0)?.toUpperCase() || 'U'}
+                          </div>
+                          <div>
+                            <p className="text-white font-medium text-sm">{user.username || 'Unknown User'}</p>
+                            {user.userId && (
+                              <p className="text-gray-300 text-xs">@{user.userId}</p>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleAddSelectedUser(user)}
+                          disabled={selectedUsers.some(u => u._id === user._id)}
+                          className="px-2 py-1 bg-green-500 hover:bg-green-600 text-white rounded text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {selectedUsers.some(u => u._id === user._id) ? 'Added' : 'Add'}
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                  <button
-                    onClick={handleAddSelectedUser}
-                    className="px-3 py-1 bg-green-500 hover:bg-green-600 text-white rounded text-sm"
-                  >
-                    Add
-                  </button>
                 </div>
               </div>
             )}
@@ -221,25 +260,37 @@ const GroupCreateModal = ({ open, onCreate, onClose, users, currentUser }) => {
             )}
 
             <div className="text-sm text-gray-400 mb-4">
-              <p className="font-medium mb-1">Available users ({users.filter(u => u._id !== currentUser?._id).length}):</p>
+              <p className="font-medium mb-1">Available users ({filteredUsers.length}):</p>
               <div className="max-h-40 overflow-y-auto bg-gray-900 rounded p-3">
-                {users
-                  .filter(u => u._id !== currentUser?._id)
-                  .slice(0, 15)
-                  .map((user) => (
-                    <div key={user._id} className="flex justify-between items-center py-1.5 border-b border-gray-800 last:border-b-0">
-                      <div>
-                        <span className="text-gray-300">{user.username}</span>
-                        {user.userId && <span className="text-gray-500 ml-2">(@{user.userId})</span>}
+                {filteredUsers.length > 0 ? (
+                  filteredUsers
+                    .slice(0, 15)
+                    .map((user) => (
+                      <div key={user._id} className="flex justify-between items-center py-1.5 border-b border-gray-800 last:border-b-0">
+                        <div>
+                          <span className="text-gray-300">{user.username || 'Unknown'}</span>
+                          {user.userId && <span className="text-gray-500 ml-2">(@{user.userId})</span>}
+                        </div>
+                        <button
+                          onClick={() => toggleUserSelection(user)}
+                          className="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 text-gray-300"
+                        >
+                          {selectedUsers.some(u => u._id === user._id) ? 'Remove' : 'Add'}
+                        </button>
                       </div>
-                      <div className="text-xs text-gray-500">
-                        Copy
-                      </div>
-                    </div>
-                  ))}
-                {users.filter(u => u._id !== currentUser?._id).length > 15 && (
+                    ))
+                ) : (
+                  <div className="text-center py-4">
+                    <Users className="w-8 h-8 text-gray-600 mx-auto mb-2" />
+                    <p className="text-gray-500">No users available</p>
+                    <p className="text-gray-600 text-xs mt-1">
+                      Try switching to Users tab first to load users
+                    </p>
+                  </div>
+                )}
+                {filteredUsers.length > 15 && (
                   <div className="text-center text-gray-500 text-xs pt-2">
-                    ... and {users.filter(u => u._id !== currentUser?._id).length - 15} more
+                    ... and {filteredUsers.length - 15} more
                   </div>
                 )}
               </div>

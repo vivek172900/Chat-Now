@@ -18,7 +18,6 @@ const syncUser = async (req, res) => {
     let user = await User.findOne({ clerkUserId });
 
     if (user) {
-      // Update existing user
       const updates = {};
       if (email && user.email !== email) updates.email = email;
       if (username && user.username !== username) updates.username = username;
@@ -34,7 +33,6 @@ const syncUser = async (req, res) => {
         );
       }
     } else {
-      // Create new user with generated userId
       user = new User({
         clerkUserId,
         email,
@@ -104,7 +102,6 @@ const getCurrentUser = async (req, res) => {
   }
 };
 
-// Set or update PIN for archive protection
 const setPin = async (req, res) => {
   try {
     const user = req.user;
@@ -128,7 +125,6 @@ const setPin = async (req, res) => {
   }
 };
 
-// Verify a provided PIN
 const verifyPin = async (req, res) => {
   try {
     const user = req.user;
@@ -159,7 +155,18 @@ const searchUsers = async (req, res) => {
     const { search } = req.query;
     const currentUser = req.user._id;
 
-    if (!search || search.length < 2) {
+    if (!search) {
+      const users = await User.find({
+        _id: { $ne: currentUser }
+      })
+      .select('userId clerkUserId username email profilePic firstName lastName about isOnline lastSeen')
+      .limit(100); 
+      
+      console.log('Returning all users:', users.length);
+      return res.json({ success: true, users });
+    }
+
+    if (search.length < 2) {
       return res.json({ success: true, users: [] });
     }
 
@@ -176,7 +183,11 @@ const searchUsers = async (req, res) => {
           ]
         }
       ]
-    }).select('userId clerkUserId username email profilePic firstName lastName about isOnline lastSeen').limit(20);
+    })
+    .select('userId clerkUserId username email profilePic firstName lastName about isOnline lastSeen')
+    .limit(50);
+
+    console.log('Search results for "' + search + '":', users.length);
 
     res.json({ success: true, users });
   } catch (error) {
@@ -208,13 +219,11 @@ const updateUserStatus = async (req, res) => {
   }
 };
 
-// Update profile (username, profilePic, wallpaper)
 const updateProfile = async (req, res) => {
   try {
     const { username, profilePic, wallpaper, theme, about } = req.body;
     const user = req.user;
 
-    // Update only the fields that are provided
     if (typeof username !== 'undefined') user.username = username;
     if (typeof profilePic !== 'undefined') user.profilePic = profilePic;
     if (typeof wallpaper !== 'undefined') user.wallpaper = wallpaper;
@@ -223,7 +232,6 @@ const updateProfile = async (req, res) => {
 
     await user.save();
 
-    // Return the updated user with all fields
     res.json({ 
       success: true, 
       user: {
@@ -248,13 +256,11 @@ const updateProfile = async (req, res) => {
   }
 };
 
-// Add or set userId for a user (accepts desired userId or auto-generates)
 const addUserId = async (req, res) => {
   try {
     const user = req.user;
     const { userId } = req.body || {};
 
-    // If user already has userId and no new value provided, return it
     if (user.userId && !userId) {
       return res.json({
         success: true,
@@ -269,7 +275,6 @@ const addUserId = async (req, res) => {
       });
     }
 
-    // Validation regex: allow letters, numbers, underscore, dot and hyphen, 3-30 chars
     const idPattern = /^[a-zA-Z0-9_.-]{3,30}$/;
 
     if (userId) {
@@ -277,7 +282,6 @@ const addUserId = async (req, res) => {
         return res.status(400).json({ success: false, error: 'Invalid userId format. Use 3-30 letters, numbers, underscore, dot or hyphen.' });
       }
 
-      // Check uniqueness
       const existing = await User.findOne({ userId });
       if (existing) {
         return res.status(409).json({ success: false, error: 'userId already taken' });
@@ -289,7 +293,6 @@ const addUserId = async (req, res) => {
       return res.json({ success: true, message: 'userId set successfully', user });
     }
 
-    // Auto-generate suggested userId from username
     let base = (user.username || user.email.split('@')[0]).toLowerCase().replace(/[^a-z0-9_.-]/g, '').slice(0, 20);
     if (!base) base = 'user';
 
@@ -310,7 +313,6 @@ const addUserId = async (req, res) => {
   }
 };
 
-// Get user by clerkUserId (for frontend)
 const getUserByClerkId = async (req, res) => {
   try {
     const { clerkUserId } = req.params;
@@ -342,7 +344,6 @@ const getUserByClerkId = async (req, res) => {
   }
 };
 
-// Check userId availability (public)
 const checkUserId = async (req, res) => {
   try {
     const { userId } = req.query;
@@ -361,7 +362,6 @@ const checkUserId = async (req, res) => {
   }
 };
 
-// Get user by userId (for frontend)
 const getUserById = async (req, res) => {
   try {
     const { userId } = req.params;

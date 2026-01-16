@@ -111,14 +111,13 @@ const uploadFileMessage = async (req, res) => {
       url: fullUrl
     });
 
-    // SIMPLIFIED: Save only the URL string for now
     const message = await Message.create({
       sender: userId,
       chat: chatId,
       content: req.file.originalname,
       messageType: fileType,
-      mediaUrl: fullUrl, // Save as string for now
-      file: undefined, // Don't set file field
+      mediaUrl: fullUrl,
+      file: undefined, 
       status: "sent",
       readBy: [{ user: userId, readAt: new Date() }],
     });
@@ -194,7 +193,6 @@ const markAsRead = async (req, res) => {
       message.status = 'seen';
       await message.save();
 
-      // Emit single message read receipt to chat room
       const io = getIO();
       io.to(`chat_${message.chat}`).emit('message_read', { messageId, readBy: userId });
     }
@@ -226,13 +224,11 @@ const deleteMessage = async (req, res) => {
   }
 };
 
-// Mark all unread messages in a chat as read by current user
 const markChatAsRead = async (req, res) => {
   try {
     const { chatId } = req.params;
     const userId = req.user._id;
 
-    // Find messages in chat that haven't been read by this user
     const unreadMessages = await Message.find({
       chat: chatId,
       'readBy.user': { $ne: userId }
@@ -246,18 +242,15 @@ const markChatAsRead = async (req, res) => {
     const updatedIds = [];
 
     for (const msg of unreadMessages) {
-      // Only add if not already present
       const already = msg.readBy.some(r => r.user.toString() === userId.toString());
       if (!already) {
         msg.readBy.push({ user: userId, readAt: now });
-        // For simplicity mark messages as seen when the user reads them
         msg.status = 'seen';
         await msg.save();
         updatedIds.push(msg._id);
       }
     }
 
-    // Emit socket event so other clients see read receipts
     const io = getIO();
     io.to(`chat_${chatId}`).emit('messages_read', {
       chatId,
@@ -271,7 +264,6 @@ const markChatAsRead = async (req, res) => {
   }
 };
 
-// Clear all messages in a chat (admin or participant) - emits chat_cleared
 const clearChat = async (req, res) => {
   try {
     const { chatId } = req.params;
@@ -284,11 +276,9 @@ const clearChat = async (req, res) => {
 
     await Message.deleteMany({ chat: chatId });
 
-    // Also clear latestMessage on chat
     chat.latestMessage = null;
     await chat.save();
 
-    // Emit socket so clients can clear UI
     const io = getIO();
     io.to(`chat_${chatId}`).emit('chat_cleared', { chatId });
 

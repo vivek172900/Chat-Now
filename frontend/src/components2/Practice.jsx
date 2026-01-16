@@ -2,8 +2,8 @@ import { useEffect, useState, useRef } from "react";
 import Peer from "peerjs";
 
 export default function Practice() {
-  const [peerId, setPeerId] = useState(""); // Your ID
-  const [remoteId, setRemoteId] = useState(""); // Other user’s ID
+  const [peerId, setPeerId] = useState(""); 
+  const [remoteId, setRemoteId] = useState(""); 
   const [peer, setPeer] = useState(null);
   const [conn, setConn] = useState(null);
   const localVideoRef = useRef(null);
@@ -11,11 +11,10 @@ export default function Practice() {
   const [localStream, setLocalStream] = useState(null);
 
   useEffect(() => {
-    // Initialize Peer
     const newPeer = new Peer();
 
     newPeer.on("open", (id) => {
-      setPeerId(id); // Set your unique ID
+      setPeerId(id);
     });
 
     newPeer.on("connection", (connection) => {
@@ -29,7 +28,7 @@ export default function Practice() {
       navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then((stream) => {
         setLocalStream(stream);
         localVideoRef.current.srcObject = stream;
-        call.answer(stream); // Answer call with your stream
+        call.answer(stream); 
 
         call.on("stream", (remoteStream) => {
           remoteVideoRef.current.srcObject = remoteStream;

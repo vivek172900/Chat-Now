@@ -8,7 +8,6 @@ const path=require("path");
 const { initializeSocket } = require("./socket/socket");
 const errorHandler = require("./middleware/errorHandler");
 
-// Import routes
 const authRoutes = require("./routes/auth.routes");
 const chatRoutes = require("./routes/chat.routes");
 const messageRoutes = require("./routes/message.routes");
@@ -20,19 +19,15 @@ const server = http.createServer(app);
 
 const Message = require('./models/Message');
 
-// Debug: Check the schema definition
 console.log('=== Message Schema Debug ===');
 console.log('Schema tree:', JSON.stringify(Message.schema.tree.file, null, 2));
 console.log('Path type:', Message.schema.path('file').instance);
 console.log('Path schema:', Message.schema.path('file').schema);
 
-// Connect to database
 connectDB;
 
-// Initialize Socket.io
 initializeSocket(server);
 
-// Middleware
 app.use(cors({
   origin: process.env.FRONTEND_URL || "http://localhost:3000",
   credentials: true
@@ -40,16 +35,13 @@ app.use(cors({
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Raw body middleware for Clerk webhook
 app.use(
   "/api/webhooks/clerk",
   express.raw({ type: "application/json" })
 );
 
-// JSON middleware for other routes
 app.use(express.json());
 
-// Test endpoints
 app.get("/", (req, res) => {
   res.json({
     message: "Chat App Backend API",
@@ -65,39 +57,17 @@ app.get("/health", (req, res) => {
   });
 });
 
-// Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/chats", chatRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/calls", callRoutes);
 app.use("/api/webhooks", webhookRoutes);
 
-// Error handling middleware (should be last)
 app.use(errorHandler);
 
-// Start server
 const PORT = process.env.PORT || 9000;
 
 server.listen(PORT, () => {
   console.log("\n" + "=".repeat(50));
   console.log("🚀 CHAT APP BACKEND SERVER STARTED");
-  // console.log("=".repeat(50));
-  // console.log(`📍 Port: ${PORT}`);
-  // console.log(`🔗 URL: http://localhost:${PORT}`);
-  // console.log(`🌐 Frontend: ${process.env.FRONTEND_URL || "http://localhost:3000"}`);
-  // console.log(`📞 Webhooks: http://localhost:${PORT}/api/webhooks/clerk`);
-  // console.log("=".repeat(50));
-  // console.log("📋 Available Endpoints:");
-  // console.log("  GET  /health");
-  // console.log("  POST /api/auth/sync");
-  // console.log("  GET  /api/auth/me");
-  // console.log("  GET  /api/auth/search?search=query");
-  // console.log("  POST /api/chats/direct");
-  // console.log("  POST /api/chats/group");
-  // console.log("  GET  /api/chats?filter=all|unarchived|archived|favorites");
-  // console.log("  POST /api/messages");
-  // console.log("  GET  /api/messages/chat/:chatId");
-  // console.log("  POST /api/calls");
-  // console.log("  GET  /api/calls");
-  // console.log("=".repeat(50) + "\n");
 });

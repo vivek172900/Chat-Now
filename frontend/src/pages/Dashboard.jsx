@@ -122,6 +122,8 @@ const Dashboard = () => {
   const [message, setMessage] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [openGroup, setOpenGroup] = useState(false);
+  const [isLoadingUsersForModal, setIsLoadingUsersForModal] = useState(false);
 
   const typingTimeoutRef = useRef(null);
   const currentTheme = themes[currentUser?.messageTheme || 'default'];
@@ -289,6 +291,28 @@ const Dashboard = () => {
     navigate('/');
   };
 
+  const handleOpenGroupModal = async () => {
+    console.log('Opening group modal, current users count:', users.length);
+    
+    // If users are not loaded yet, fetch them first
+    if (users.length === 0) {
+      setIsLoadingUsersForModal(true);
+      try {
+        console.log('Fetching users for group modal...');
+        await fetchUsers(''); // Fetch all users
+        console.log('Users fetched successfully');
+      } catch (error) {
+        console.error('Failed to fetch users:', error);
+        alert('Failed to load users. Please try again.');
+        return;
+      } finally {
+        setIsLoadingUsersForModal(false);
+      }
+    }
+    
+    setOpenGroup(true);
+  };
+
   useEffect(() => {
     return () => {
       if (selectedChat) sendTypingIndicator(selectedChat._id, false);
@@ -336,11 +360,21 @@ const Dashboard = () => {
         />
       )}
 
+      {isLoadingUsersForModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 p-6 rounded-xl flex flex-col items-center">
+            <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+            <p className="text-white">Loading users for group creation...</p>
+          </div>
+        </div>
+      )}
+
       {activeTab !== 'settings' && (
         <ChatList
           activeTab={activeTab}
           chats={chats}
           users={users}
+          fetchUsers={fetchUsers}
           isLoading={isLoading}
           selectedChat={selectedChat}
           searchQuery={searchQuery}
@@ -354,6 +388,9 @@ const Dashboard = () => {
           currentUser={currentUser}
           currentTheme={currentTheme}
           onCreateGroup={createGroupChat}
+          openGroup={openGroup}
+          setOpenGroup={setOpenGroup}
+          handleOpenGroupModal={handleOpenGroupModal}
         />
       )}
 

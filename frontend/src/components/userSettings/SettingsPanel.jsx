@@ -127,7 +127,6 @@ const themes = [
   }
 ];
 
-// Predefined "About" status suggestions
 const aboutSuggestions = [
   "Hey there! I am using Chat App",
   "Available for a chat",
@@ -156,7 +155,6 @@ const SettingsPanel = ({ currentUser, updateUserProfile }) => {
   const [charCount, setCharCount] = useState(0);
   const [isUserIdEditable, setIsUserIdEditable] = useState(false);
 
-  // Keep local state in sync if currentUser changes externally
   React.useEffect(() => {
     setUserId(currentUser?.userId || '');
     setProfilePic(currentUser?.profilePic || '');
@@ -190,7 +188,6 @@ const SettingsPanel = ({ currentUser, updateUserProfile }) => {
 
   const handleUserIdChange = (e) => {
     const value = e.target.value;
-    // Allow alphanumeric and some special characters for userId
     const sanitizedValue = value.replace(/[^a-zA-Z0-9._-]/g, '');
     setUserId(sanitizedValue);
   };
@@ -206,7 +203,6 @@ const SettingsPanel = ({ currentUser, updateUserProfile }) => {
       return;
     }
 
-    // Basic validation for userId
     if (userId.length < 3 || userId.length > 20) {
       alert('User ID must be between 3 and 20 characters');
       return;
@@ -222,7 +218,6 @@ const SettingsPanel = ({ currentUser, updateUserProfile }) => {
         about
       });
       if (res.success) {
-        // sync local preview with persisted values
         setUserId(res.user.userId || '');
         setProfilePic(res.user.profilePic || '');
         setWallpaper(res.user.wallpaper ?? null);
@@ -244,14 +239,12 @@ const SettingsPanel = ({ currentUser, updateUserProfile }) => {
 
   const selectedTheme = themes.find(t => t.id === theme) || themes[0];
 
-  // Updated theme preview to show only message bubble changes
   const renderThemePreview = () => {
     const currentColors = selectedTheme.colors;
     return (
       <div className="mt-6 p-4 rounded-lg bg-gray-900">
         <h4 className="text-sm font-medium mb-3">Preview (Only message bubbles change)</h4>
         <div className="rounded-lg overflow-hidden bg-gray-900">
-          {/* Mock Chat Header - Always dark */}
           <div className="p-3 bg-gray-800">
             <div className="flex items-center">
               <div className="w-8 h-8 rounded-full bg-gray-300 mr-3"></div>
@@ -262,7 +255,6 @@ const SettingsPanel = ({ currentUser, updateUserProfile }) => {
             </div>
           </div>
           
-          {/* Mock Chat Messages - Only bubbles change */}
           <div className="p-4 space-y-3 bg-gray-900">
             <div className="flex justify-start">
               <div className={`max-w-xs p-3 rounded-2xl rounded-tl-none ${currentColors.bubbleOther} ${currentColors.textOther || 'text-white'}`}>
@@ -306,7 +298,6 @@ const SettingsPanel = ({ currentUser, updateUserProfile }) => {
             )}
           </div>
           
-          {/* Upload overlay */}
           <label className="absolute inset-0 rounded-full bg-black bg-opacity-50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
             <div className="text-center p-4">
               <svg className="w-8 h-8 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -329,7 +320,6 @@ const SettingsPanel = ({ currentUser, updateUserProfile }) => {
       </div>
 
       <div className="space-y-6">
-        {/* Profile Section */}
         <div className="bg-gray-800 rounded-lg p-4">
           <h3 className="text-lg font-medium mb-3">Profile Information</h3>
           
@@ -426,7 +416,6 @@ const SettingsPanel = ({ currentUser, updateUserProfile }) => {
           </div>
         </div>
 
-        {/* Theme Selection Section */}
         <div className="bg-gray-800 rounded-lg p-4">
           <h3 className="text-lg font-medium mb-3">Message Theme</h3>
           <p className="text-sm text-gray-400 mb-4">Choose a theme for your message bubbles only</p>
@@ -459,11 +448,9 @@ const SettingsPanel = ({ currentUser, updateUserProfile }) => {
             ))}
           </div>
 
-          {/* Theme Preview */}
           {renderThemePreview()}
         </div>
 
-        {/* Wallpaper Section */}
         <div className="bg-gray-800 rounded-lg p-4">
           <h3 className="text-lg font-medium mb-3">Chat Wallpaper</h3>
           <p className="text-sm text-gray-400 mb-4">Choose a background for your chat area</p>
@@ -494,7 +481,6 @@ const SettingsPanel = ({ currentUser, updateUserProfile }) => {
           </div>
         </div>
 
-        {/* Current Settings Preview - Updated */}
         <div className="bg-gray-800 rounded-lg p-4">
           <h3 className="text-lg font-medium mb-3">Current Settings Preview</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -545,7 +531,6 @@ const SettingsPanel = ({ currentUser, updateUserProfile }) => {
           </div>
         </div>
 
-        {/* Account Information */}
         <div className="bg-gray-800 rounded-lg p-4">
           <h3 className="text-lg font-medium mb-3">Account Information</h3>
           <div className="space-y-3">
@@ -591,7 +576,6 @@ const SettingsPanel = ({ currentUser, updateUserProfile }) => {
           </div>
         </div>
 
-        {/* Save Button */}
         <div className="flex justify-between items-center pt-4">
           <div className="text-sm text-gray-400">
             Your settings will be applied across all your devices

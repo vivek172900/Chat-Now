@@ -1,4 +1,3 @@
-// SetupUserId.jsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authAPI } from '../../services/api';
@@ -11,7 +10,6 @@ const SetupUserId = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Fetch current user data
     const fetchUserData = async () => {
       try {
         const response = await authAPI.getCurrentUser();
@@ -28,10 +26,8 @@ const SetupUserId = () => {
   const [desiredId, setDesiredId] = useState('');
   const [available, setAvailable] = useState(null);
 
-  // validate desiredId format (6-30 chars)
   const isValidFormat = (id) => /^[a-zA-Z0-9_.-]{6,30}$/.test(id);
 
-  // If user already has a valid userId (>5 chars) redirect to chat immediately
   useEffect(() => {
     if (userData && userData.userId && String(userData.userId).length > 5) {
       navigate('/chat');
@@ -64,7 +60,6 @@ const SetupUserId = () => {
     setError('');
 
     try {
-      // require a desiredId that matches the new policy
       if (!desiredId || !isValidFormat(desiredId)) {
         setError('Please enter a valid userId (6-30 chars, letters, numbers, _, ., -)');
         setLoading(false);
@@ -81,11 +76,9 @@ const SetupUserId = () => {
 
       if (response.data && response.data.success) {
         setSuccess(true);
-        // update local preview userData from response.user
         const returnedUser = response.data.user || { ...userData, userId: response.data.userId };
         setUserData(returnedUser);
 
-        // refresh current user from server to ensure global state has userId
         try {
           const me = await authAPI.getCurrentUser();
           if (me.data && me.data.success) {
@@ -95,7 +88,6 @@ const SetupUserId = () => {
           console.warn('Failed to refresh current user after setting userId', err);
         }
 
-        // Redirect to chat after a short delay
         setTimeout(() => {
           navigate('/chat');
         }, 500);
@@ -111,7 +103,6 @@ const SetupUserId = () => {
   };
 
   const handleSkip = () => {
-    // Skip and go to chat (optional - you might want to force userId)
     navigate('/chat');
   };
 

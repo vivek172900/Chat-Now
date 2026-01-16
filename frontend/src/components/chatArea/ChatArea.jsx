@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Phone, Video, MoreVertical, UserPlus } from 'lucide-react';
 import MessageBubble from './MessageBubble';
 import ShowProfile from './ShowProfile';
+import GroupProfile from './GroupProfile';
 import MessageInput from './MessageInput';
 import SearchUserModal from '../chatList/searchUserModel';
 
@@ -38,13 +39,15 @@ const ChatArea = ({
   getDisplayAvatar
 }) => {
   const [showProfile, setShowProfile] = useState(false);
-  const [profileUser, setProfileUser] = useState(null);
+  const [showGroupProfile, setShowGroupProfile] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [localWallpaper, setLocalWallpaper] = useState(selectedChat?.preference?.wallpaper || null);
   const [unreadMessages, setUnreadMessages] = useState([]);
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
   const observerRef = useRef(null);
 
+  const isGroupChat = selectedChat?.isGroupChat;
+  const isAdmin = isGroupChat && (selectedChat.admin?._id === currentUser._id || selectedChat.admin === currentUser._id);
   const isSomeoneTyping = selectedChat &&
     typingUsers[selectedChat._id] &&
     Object.values(typingUsers[selectedChat._id]).some(time =>
@@ -133,12 +136,12 @@ const ChatArea = ({
 
   const handleProfileClick = () => {
     if (isGroupChat) {
-      return;
-    }
-
-    if (otherParticipant) {
-      setProfileUser(otherParticipant);
-      setShowProfile(true);
+      setShowGroupProfile(true);
+    } else {
+      const otherParticipant = getOtherParticipant();
+      if (otherParticipant) {
+        setShowProfile(true);
+      }
     }
   };
 
@@ -161,7 +164,6 @@ const ChatArea = ({
   };
 
   const otherParticipant = getOtherParticipant();
-  const isGroupChat = selectedChat?.isGroupChat;
 
   const handleAddMember = async (user) => {
     const existing = selectedChat.participants?.map(p => p._id || p) || [];
@@ -172,52 +174,85 @@ const ChatArea = ({
     }
     
     const newParticipants = [...existing, user._id];
-    await onUpdateGroupChat?.(selectedChat._id, { participants: newParticipants });
+    const result = await onUpdateGroupChat?.(selectedChat._id, { participants: newParticipants });
     
-    alert(`${user.username} has been added to the group`);
+    if (result?.success) {
+      alert(`${user.username} has been added to the group`);
+    }
   };
 
   const handleSearchUserSelect = (user) => {
     handleAddMember(user);
   };
 
+  const handleLeaveGroup = async () => {
+    const confirmLeave = window.confirm('Are you sure you want to leave this group?');
+    if (!confirmLeave) return;
+
+    const existing = selectedChat.participants?.map(p => p._id || p) || [];
+    const newParticipants = existing.filter(id => id !== currentUser._id);
+
+    if (newParticipants.length === 0) {
+      alert('Cannot leave group as you are the only member. Delete the group instead.');
+      return;
+    }
+
+    const result = await onUpdateGroupChat?.(selectedChat._id, { participants: newParticipants });
+    if (result?.success) {
+      alert('You have left the group');
+    }
+  };
+
+  const handleDeleteGroup = async () => {
+    const confirmDelete = window.confirm('Are you sure you want to delete this group? This action cannot be undone.');
+    if (!confirmDelete) return;
+
+    const result = await onUpdateGroupChat?.(selectedChat._id, { 
+      participants: [],
+      isDeleted: true 
+    });
+    if (result?.success) {
+      alert('Group has been deleted');
+    }
+  };
+
+  const getDisplayName = () => {
+    if (isGroupChat) {
+      return selectedChat?.chatName || 'Group Chat';
+    }
+    return getDisplayId(otherParticipant);
+  };
+
   const renderChatHeader = () => (
     <div className="border-b border-gray-700 p-4 flex items-center justify-between bg-gray-800 flex-shrink-0">
       <div className="flex items-center space-x-3">
-        {isGroupChat ? (
-          <button
-            onClick={handleProfileClick}
-            className="relative focus:outline-none"
-          >
+        <button
+          onClick={handleProfileClick}
+          className="relative focus:outline-none"
+        >
+          {isGroupChat ? (
             <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-semibold hover:opacity-90 transition-opacity">
-              {selectedChat.chatName?.charAt(0)?.toUpperCase() || 'G'}
+              {selectedChat?.chatName?.charAt(0)?.toUpperCase() || 'G'}
             </div>
-          </button>
-        ) : (
-          <button
-            onClick={handleProfileClick}
-            className="relative focus:outline-none"
-          >
-            {otherParticipant?.profilePic ? (
-              <img
-                src={otherParticipant.profilePic}
-                alt={getDisplayId(otherParticipant)}
-                className="w-10 h-10 rounded-full object-cover hover:opacity-90 transition-opacity"
-              />
-            ) : (
-              <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full flex items-center justify-center text-white font-semibold hover:opacity-90 transition-opacity">
-                {getDisplayAvatar(otherParticipant)}
-              </div>
-            )}
-            {otherParticipant?.isOnline && (
-              <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-gray-800"></div>
-            )}
-          </button>
-        )}
+          ) : otherParticipant?.profilePic ? (
+            <img
+              src={otherParticipant.profilePic}
+              alt={getDisplayId(otherParticipant)}
+              className="w-10 h-10 rounded-full object-cover hover:opacity-90 transition-opacity"
+            />
+          ) : (
+            <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full flex items-center justify-center text-white font-semibold hover:opacity-90 transition-opacity">
+              {getDisplayAvatar(otherParticipant)}
+            </div>
+          )}
+          {!isGroupChat && otherParticipant?.isOnline && (
+            <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-gray-800"></div>
+          )}
+        </button>
 
         <div>
           <h3 className="text-white font-semibold">
-            {getDisplayName(otherParticipant)}
+            {getDisplayName()}
           </h3>
           <p className="text-gray-400 text-sm">
             {isGroupChat
@@ -234,7 +269,7 @@ const ChatArea = ({
       </div>
 
       <div className="flex items-center space-x-2">
-        {isGroupChat && (
+        {isGroupChat && isAdmin && (
           <button
             onClick={() => setShowAddMemberModal(true)}
             className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
@@ -243,12 +278,12 @@ const ChatArea = ({
             <UserPlus className="w-5 h-5" />
           </button>
         )}
-        <button className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors">
+        {/* <button className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors">
           <Phone className="w-5 h-5" />
         </button>
         <button className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors">
           <Video className="w-5 h-5" />
-        </button>
+        </button> */}
         <div className="relative">
           <button
             onClick={() => { setShowMenu(s => !s); }}
@@ -275,94 +310,113 @@ const ChatArea = ({
 
               {isGroupChat && (
                 <>
-                  <button
-                    className="w-full text-left px-4 py-2 hover:bg-gray-700 text-gray-300"
-                    onClick={async () => {
-                      setShowMenu(false);
-                      const newName = window.prompt('Enter new group name', selectedChat?.chatName || '');
-                      if (!newName || newName.trim().length === 0) return;
-                      if (newName.length > 100) {
-                        alert('Group name must be less than 100 characters');
-                        return;
-                      }
-                      await onUpdateGroupChat?.(selectedChat._id, { chatName: newName.trim() });
-                    }}
-                  >
-                    Rename group
-                  </button>
+                  {isAdmin && (
+                    <button
+                      className="w-full text-left px-4 py-2 hover:bg-gray-700 text-gray-300"
+                      onClick={async () => {
+                        setShowMenu(false);
+                        const newName = window.prompt('Enter new group name', selectedChat?.chatName || '');
+                        if (!newName || newName.trim().length === 0) return;
+                        if (newName.length > 100) {
+                          alert('Group name must be less than 100 characters');
+                          return;
+                        }
+                        await onUpdateGroupChat?.(selectedChat._id, { chatName: newName.trim() });
+                      }}
+                    >
+                      Rename group
+                    </button>
+                  )}
 
-                  <button
-                    className="w-full text-left px-4 py-2 hover:bg-gray-700 text-gray-300"
-                    onClick={() => {
-                      setShowMenu(false);
-                      setShowAddMemberModal(true);
-                    }}
-                  >
-                    Add participant
-                  </button>
+                  {isAdmin && (
+                    <button
+                      className="w-full text-left px-4 py-2 hover:bg-gray-700 text-gray-300"
+                      onClick={() => {
+                        setShowMenu(false);
+                        setShowAddMemberModal(true);
+                      }}
+                    >
+                      Add participant
+                    </button>
+                  )}
 
-                  <button
-                    className="w-full text-left px-4 py-2 hover:bg-gray-700 text-gray-300"
-                    onClick={async () => {
-                      setShowMenu(false);
+                  {isAdmin && (
+                    <button
+                      className="w-full text-left px-4 py-2 hover:bg-gray-700 text-gray-300"
+                      onClick={async () => {
+                        setShowMenu(false);
+                        if (selectedChat.participants?.length <= 2) {
+                          alert('Cannot remove participants - group must have at least 2 members');
+                          return;
+                        }
+                        const query = window.prompt('Enter userId or username to remove');
+                        if (!query) return;
+                        const match = selectedChat.participants?.find(p =>
+                          p.userId === query ||
+                          p.username === query ||
+                          p._id === query
+                        );
+                        if (!match) {
+                          alert(`No participant found: ${query}`);
+                          return;
+                        }
+                        if (match._id === selectedChat.admin?._id || match._id === selectedChat.admin) {
+                          alert('Cannot remove group admin');
+                          return;
+                        }
+                        const existing = selectedChat.participants?.map(p => p._id || p);
+                        const newParticipants = existing.filter(id => id !== match._id);
+                        await onUpdateGroupChat?.(selectedChat._id, { participants: newParticipants });
+                      }}
+                    >
+                      Remove participant
+                    </button>
+                  )}
 
-                      if (selectedChat.participants?.length <= 2) {
-                        alert('Cannot remove participants - group must have at least 2 members');
-                        return;
-                      }
-
-                      const query = window.prompt('Enter userId or username to remove');
-                      if (!query) return;
-
-                      const match = selectedChat.participants?.find(p =>
-                        p.userId === query ||
-                        p.username === query ||
-                        p._id === query
-                      );
-
-                      if (!match) {
-                        alert(`No participant found: ${query}`);
-                        return;
-                      }
-
-                      if (match._id === selectedChat.admin?._id || match._id === selectedChat.admin) {
-                        alert('Cannot remove group admin');
-                        return;
-                      }
-
-                      const existing = selectedChat.participants?.map(p => p._id || p);
-                      const newParticipants = existing.filter(id => id !== match._id);
-                      await onUpdateGroupChat?.(selectedChat._id, { participants: newParticipants });
-                    }}
-                  >
-                    Remove participant
-                  </button>
-
-                  <button
-                    className="w-full text-left px-4 py-2 hover:bg-gray-700 text-gray-300"
-                    onClick={async () => {
-                      setShowMenu(false);
-                      const query = window.prompt('Enter userId or username to make admin');
-                      if (!query) return;
-
-                      const match = selectedChat.participants?.find(p =>
-                        p.userId === query ||
-                        p.username === query ||
-                        p._id === query
-                      );
-
-                      if (!match) {
-                        alert(`No participant found: ${query}`);
-                        return;
-                      }
-
-                      await onUpdateGroupChat?.(selectedChat._id, { admin: match._id });
-                    }}
-                  >
-                    Make admin
-                  </button>
+                  {isAdmin && (
+                    <button
+                      className="w-full text-left px-4 py-2 hover:bg-gray-700 text-gray-300"
+                      onClick={async () => {
+                        setShowMenu(false);
+                        const query = window.prompt('Enter userId or username to make admin');
+                        if (!query) return;
+                        const match = selectedChat.participants?.find(p =>
+                          p.userId === query ||
+                          p.username === query ||
+                          p._id === query
+                        );
+                        if (!match) {
+                          alert(`No participant found: ${query}`);
+                          return;
+                        }
+                        await onUpdateGroupChat?.(selectedChat._id, { admin: match._id });
+                      }}
+                    >
+                      Make admin
+                    </button>
+                  )}
 
                   <div className="border-t border-gray-700 my-1"></div>
+                  <button
+                    className="w-full text-left px-4 py-2 hover:bg-gray-700 text-orange-400"
+                    onClick={() => {
+                      setShowMenu(false);
+                      handleLeaveGroup();
+                    }}
+                  >
+                    Leave group
+                  </button>
+                  {isAdmin && (
+                    <button
+                      className="w-full text-left px-4 py-2 hover:bg-gray-700 text-red-400"
+                      onClick={() => {
+                        setShowMenu(false);
+                        handleDeleteGroup();
+                      }}
+                    >
+                      Delete group
+                    </button>
+                  )}
                 </>
               )}
 
@@ -397,20 +451,6 @@ const ChatArea = ({
     </div>
   );
 
-  const getDisplayName = (user) => {
-    if (!user) return 'Unknown User';
-
-    if (selectedChat?.isGroupChat && selectedChat?.chatName) {
-      return selectedChat.chatName;
-    }
-
-    if (user) {
-      return user?.userId || `User ${user?._id?.slice(-4)}`;
-    }
-
-    return 'Unknown User';
-  };
-
   const renderMessages = () => (
     <div
       ref={messagesContainerRef}
@@ -420,22 +460,16 @@ const ChatArea = ({
         if (unreadMessages.length > 0) {
           const container = messagesContainerRef.current;
           if (container) {
-            const scrollTop = container.scrollTop;
-            const containerHeight = container.clientHeight;
-
             const visibleMessages = unreadMessages.filter(msg => {
               const element = document.querySelector(`[data-message-id="${msg._id}"]`);
               if (!element) return false;
-
               const rect = element.getBoundingClientRect();
               const containerRect = container.getBoundingClientRect();
-
               return (
                 rect.top >= containerRect.top &&
                 rect.bottom <= containerRect.bottom
               );
             });
-
             if (visibleMessages.length > 0) {
               markChatRead?.(selectedChat._id);
             }
@@ -560,14 +594,24 @@ const ChatArea = ({
       />
 
       <ShowProfile
-        user={profileUser}
+        user={otherParticipant}
         isOpen={showProfile}
         onClose={() => setShowProfile(false)}
         getDisplayId={getDisplayId}
         getDisplayAvatar={getDisplayAvatar}
       />
 
-      {showAddMemberModal && (
+      <GroupProfile
+        group={selectedChat}
+        isOpen={showGroupProfile}
+        onClose={() => setShowGroupProfile(false)}
+        currentUser={currentUser}
+        onUpdateGroupChat={onUpdateGroupChat}
+        getDisplayId={getDisplayId}
+        getDisplayAvatar={getDisplayAvatar}
+      />
+
+      {showAddMemberModal && isAdmin && (
         <SearchUserModal
           open={showAddMemberModal}
           onClose={() => setShowAddMemberModal(false)}
