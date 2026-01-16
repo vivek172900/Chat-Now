@@ -1,13 +1,21 @@
 import React from 'react';
-import { MessageCircle, Users, Settings, Archive, Heart, Lock } from 'lucide-react';
+import { MessageCircle, Users, Settings, Archive, Heart, Lock, LogOut } from 'lucide-react';
+import { useAuth } from '@clerk/clerk-react';
+import { useNavigate } from 'react-router-dom';
 
 const Sidebar = ({ activeTab, setActiveTab, totalUnreadCount, currentUser, handleLogout }) => {
+  const { signOut } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogoutClick = async () => {
+    handleLogout();
+    await signOut();
+  };
   const sidebarItems = [
     { id: 'chats', icon: MessageCircle, label: 'Chats' },
     { id: 'users', icon: Users, label: 'Users' },
     { id: 'archive', icon: Archive, label: 'Archive' },
     { id: 'favorites', icon: Heart, label: 'Favorites' },
-    { id: 'locked', icon: Lock, label: 'Locked' },
     { id: 'settings', icon: Settings, label: 'Settings' },
   ];
 
@@ -49,13 +57,11 @@ const Sidebar = ({ activeTab, setActiveTab, totalUnreadCount, currentUser, handl
           </div>
         )}
         <button
-          onClick={handleLogout}
+          onClick={handleLogoutClick}
           className="text-gray-400 hover:text-red-400 transition-colors"
           title="Logout"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-          </svg>
+          <LogOut className="w-5 h-5" />
         </button>
       </div>
     </div>

@@ -4,6 +4,7 @@ const express = require("express");
 const cors = require("cors");
 const http = require("http");
 const connectDB = require("./db/connection.js");
+const path=require("path");
 const { initializeSocket } = require("./socket/socket");
 const errorHandler = require("./middleware/errorHandler");
 
@@ -17,6 +18,14 @@ const webhookRoutes = require("./routes/webhook.routes");
 const app = express();
 const server = http.createServer(app);
 
+const Message = require('./models/Message');
+
+// Debug: Check the schema definition
+console.log('=== Message Schema Debug ===');
+console.log('Schema tree:', JSON.stringify(Message.schema.tree.file, null, 2));
+console.log('Path type:', Message.schema.path('file').instance);
+console.log('Path schema:', Message.schema.path('file').schema);
+
 // Connect to database
 connectDB;
 
@@ -28,6 +37,8 @@ app.use(cors({
   origin: process.env.FRONTEND_URL || "http://localhost:3000",
   credentials: true
 }));
+
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Raw body middleware for Clerk webhook
 app.use(

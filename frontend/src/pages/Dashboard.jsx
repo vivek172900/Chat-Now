@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@clerk/clerk-react';
 import { useChat } from '../hooks/useChat';
 import Sidebar from '../components/Sidebar';
 import PinModal from '../components/auth/PinModal';
@@ -7,77 +8,84 @@ import ChatList from '../components/chatList/ChatList';
 import ChatArea from '../components/chatArea/ChatArea';
 import SettingsPanel from '../components/userSettings/SettingsPanel';
 
-// Define themes object for easy access
 const themes = {
   default: {
     primary: 'bg-blue-500',
     secondary: 'bg-gray-700',
     text: 'text-white',
-    bubbleUser: 'bg-blue-600',
-    bubbleOther: 'bg-gray-700'
+    bubbleUser: 'bg-gradient-to-r from-blue-500 to-blue-600',
+    bubbleOther: 'bg-gray-700',
+    textUser: 'text-white',
+    textOther: 'text-white'
   },
   dark: {
     primary: 'bg-gray-800',
     secondary: 'bg-gray-900',
     text: 'text-gray-100',
-    bubbleUser: 'bg-gray-700',
-    bubbleOther: 'bg-gray-800'
+    bubbleUser: 'bg-gradient-to-r from-gray-700 to-gray-800',
+    bubbleOther: 'bg-gray-800',
+    textUser: 'text-white',
+    textOther: 'text-white'
   },
   sunrise: {
     primary: 'bg-orange-500',
     secondary: 'bg-amber-50',
     text: 'text-gray-900',
-    bubbleUser: 'bg-orange-500',
-    bubbleOther: 'bg-amber-100'
+    bubbleUser: 'bg-gradient-to-r from-orange-400 to-orange-500',
+    bubbleOther: 'bg-amber-100',
+    textUser: 'text-white',
+    textOther: 'text-gray-900'
   },
   ocean: {
     primary: 'bg-blue-400',
     secondary: 'bg-blue-50',
     text: 'text-gray-800',
-    bubbleUser: 'bg-blue-500',
-    bubbleOther: 'bg-blue-100'
+    bubbleUser: 'bg-gradient-to-r from-blue-400 to-blue-500',
+    bubbleOther: 'bg-blue-100',
+    textUser: 'text-white',
+    textOther: 'text-gray-800'
   },
   forest: {
     primary: 'bg-green-600',
     secondary: 'bg-emerald-50',
     text: 'text-gray-800',
-    bubbleUser: 'bg-green-600',
-    bubbleOther: 'bg-emerald-100'
+    bubbleUser: 'bg-gradient-to-r from-green-500 to-green-600',
+    bubbleOther: 'bg-emerald-100',
+    textUser: 'text-white',
+    textOther: 'text-gray-800'
   },
   'purple-dream': {
     primary: 'bg-purple-600',
     secondary: 'bg-purple-50',
     text: 'text-gray-800',
-    bubbleUser: 'bg-purple-600',
-    bubbleOther: 'bg-purple-100'
+    bubbleUser: 'bg-gradient-to-r from-purple-500 to-purple-600',
+    bubbleOther: 'bg-purple-100',
+    textUser: 'text-white',
+    textOther: 'text-gray-800'
   },
   midnight: {
     primary: 'bg-indigo-900',
     secondary: 'bg-gray-900',
     text: 'text-gray-100',
-    bubbleUser: 'bg-indigo-800',
-    bubbleOther: 'bg-gray-800'
+    bubbleUser: 'bg-gradient-to-r from-indigo-800 to-indigo-900',
+    bubbleOther: 'bg-gray-800',
+    textUser: 'text-white',
+    textOther: 'text-white'
   },
   minimal: {
     primary: 'bg-gray-200',
     secondary: 'bg-white',
     text: 'text-gray-900',
-    bubbleUser: 'bg-gray-300',
-    bubbleOther: 'bg-gray-100'
+    bubbleUser: 'bg-gradient-to-r from-gray-200 to-gray-300',
+    bubbleOther: 'bg-gray-100',
+    textUser: 'text-gray-900',
+    textOther: 'text-gray-900'
   }
-};
-
-// Define wallpapers object for easy access
-const wallpapers = {
-  null: 'bg-gray-900',
-  'blue-gradient': 'bg-gradient-to-r from-blue-800 to-cyan-600',
-  'purple-pink': 'bg-gradient-to-r from-purple-500 to-pink-500',
-  'sunset': 'bg-gradient-to-r from-yellow-400 to-orange-500',
-  'green': 'bg-gradient-to-r from-emerald-400 to-green-600'
 };
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const { signOut } = useAuth();
 
   const {
     currentUser,
@@ -96,7 +104,9 @@ const Dashboard = () => {
     fetchUsers,
     getOrCreateChat,
     sendMessage,
+    sendFileMessage,
     updateChatPreference,
+    updateGroupChat,
     sendTypingIndicator,
     scrollToBottom,
     getTotalUnreadCount,
@@ -105,7 +115,8 @@ const Dashboard = () => {
     updateUserProfile,
     setPin,
     verifyPin,
-    deleteChat
+    deleteChat,
+    createGroupChat
   } = useChat();
 
   const [message, setMessage] = useState('');
@@ -113,16 +124,8 @@ const Dashboard = () => {
   const [isSending, setIsSending] = useState(false);
 
   const typingTimeoutRef = useRef(null);
-
-  /* ======================
-     GET CURRENT THEME AND WALLPAPER
-  ====================== */
   const currentTheme = themes[currentUser?.messageTheme || 'default'];
-  const currentWallpaper = wallpapers[currentUser?.wallpaper || null];
 
-  /* ======================
-     AUTH CHECK
-  ====================== */
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) {
@@ -132,16 +135,12 @@ const Dashboard = () => {
     }
   }, [navigate, fetchCurrentUser]);
 
-  // Redirect users who haven't set a userId to the setup page
   useEffect(() => {
     if (currentUser && !currentUser.userId) {
       navigate('/setup-user-id');
     }
   }, [currentUser, navigate]);
 
-  /* ======================
-     CHAT SELECTION
-  ====================== */
   const handleChatSelect = useCallback(
     async (chat) => {
       if (!chat?._id) return;
@@ -151,18 +150,11 @@ const Dashboard = () => {
     [setSelectedChat, scrollToBottom]
   );
 
-  // PIN modal state + helpers
   const [pinModal, setPinModal] = useState({ open: false, mode: 'verify', callback: null });
   const [archiveUnlocked, setArchiveUnlocked] = useState(false);
 
-  const openPinSetup = (callback) => {
-    setPinModal({ open: true, mode: 'setup', callback });
-  };
-
-  const openPinVerify = (callback) => {
-    setPinModal({ open: true, mode: 'verify', callback });
-  };
-
+  const openPinSetup = (callback) => setPinModal({ open: true, mode: 'setup', callback });
+  const openPinVerify = (callback) => setPinModal({ open: true, mode: 'verify', callback });
   const closePinModal = () => setPinModal({ open: false, mode: 'verify', callback: null });
 
   const handleSetPin = async (pin) => {
@@ -181,7 +173,6 @@ const Dashboard = () => {
     throw new Error('Invalid PIN');
   };
 
-  // Handle tab switching with PIN protection for archive
   const handleSetActiveTab = (target) => {
     if (target !== 'archive') {
       setArchiveUnlocked(false);
@@ -189,14 +180,12 @@ const Dashboard = () => {
       return;
     }
 
-    // Going to archive
     if (archiveUnlocked) {
       setActiveTab('archive');
       return;
     }
 
     if (!currentUser?.hasPin) {
-      // Ask user to set a PIN first
       openPinSetup(() => {
         setArchiveUnlocked(true);
         setActiveTab('archive');
@@ -204,7 +193,6 @@ const Dashboard = () => {
       return;
     }
 
-    // Ask for PIN verification
     openPinVerify(() => {
       setArchiveUnlocked(true);
       setActiveTab('archive');
@@ -213,22 +201,17 @@ const Dashboard = () => {
 
   const handleDeleteChat = async (chatId) => {
     const res = await deleteChat(chatId);
-    if (!res.success) {
-      alert('Failed to delete chat');
-    }
+    if (!res.success) alert('Failed to delete chat');
   };
 
-  // Called by ConversationItem when user asks to set PIN before locking a chat
   const handleRequestSetPin = (chatId) => {
     openPinSetup(async () => {
-      // After setting PIN, lock the chat
       await updateChatPreference(chatId, { locked: true });
     });
   };
 
-  // Called by ConversationItem when user tries to unlock a chat
   const handleRequestVerifyPin = async (chatId) => {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       openPinVerify(async (ok) => {
         if (ok) {
           await updateChatPreference(chatId, { locked: false });
@@ -250,12 +233,8 @@ const Dashboard = () => {
     }
   };
 
-  /* ======================
-     MESSAGE SEND
-  ====================== */
   const handleSendMessage = async () => {
     if (!message.trim() || !selectedChat || isSending) return;
-
     setIsSending(true);
     try {
       await sendMessage(selectedChat._id, message.trim());
@@ -263,31 +242,35 @@ const Dashboard = () => {
       scrollToBottom();
     } catch (err) {
       console.error('Send message error:', err);
+      alert('Failed to send message');
     } finally {
       setIsSending(false);
     }
   };
 
-  /* ======================
-     TYPING INDICATOR (FIXED)
-  ====================== */
+  const handleSendFile = async (file) => {
+    if (!selectedChat || isSending) return;
+    setIsSending(true);
+    try {
+      await sendFileMessage(selectedChat._id, file);
+      scrollToBottom();
+    } catch (err) {
+      console.error('File upload error:', err);
+      alert(`Failed to upload file: ${err.message}`);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
   const handleTyping = (value) => {
     if (!selectedChat) return;
-
     sendTypingIndicator(selectedChat._id, value);
-
-    if (typingTimeoutRef.current) {
-      clearTimeout(typingTimeoutRef.current);
-    }
-
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = setTimeout(() => {
       sendTypingIndicator(selectedChat._id, false);
     }, 1200);
   };
 
-  /* ======================
-     ENTER KEY SEND
-  ====================== */
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -295,39 +278,24 @@ const Dashboard = () => {
     }
   };
 
-  /* ======================
-     SEARCH
-  ====================== */
   const handleSearch = (query) => {
     setSearchQuery(query);
-    if (activeTab === 'users') {
-      fetchUsers(query);
-    }
+    if (activeTab === 'users') fetchUsers(query);
   };
 
-  /* ======================
-     LOGOUT
-  ====================== */
-  const handleLogout = () => {
+  const handleLogout = async () => {
     localStorage.clear();
-    navigate('/login');
+    await signOut();
+    navigate('/');
   };
 
-  /* ======================
-     CLEANUP
-  ====================== */
   useEffect(() => {
     return () => {
-      if (selectedChat) {
-        sendTypingIndicator(selectedChat._id, false);
-      }
+      if (selectedChat) sendTypingIndicator(selectedChat._id, false);
       clearTimeout(typingTimeoutRef.current);
     };
   }, [selectedChat, sendTypingIndicator]);
 
-  /* ======================
-     LOADING STATE
-  ====================== */
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
@@ -339,9 +307,17 @@ const Dashboard = () => {
     );
   }
 
-  /* ======================
-     UI
-  ====================== */
+  const getDisplayId = (user) => {
+    if (!user) return 'Unknown';
+    return user?.userId || user?._id?.slice(-8) || 'Unknown';
+  };
+
+  const getDisplayAvatar = (user) => {
+    if (!user) return 'U';
+    const displayId = user?.userId || user?._id || 'U';
+    return displayId.charAt(0).toUpperCase();
+  };
+
   return (
     <div className="h-screen bg-gray-900 flex">
       <Sidebar
@@ -360,7 +336,6 @@ const Dashboard = () => {
         />
       )}
 
-      {/* Only show ChatList when NOT in settings tab */}
       {activeTab !== 'settings' && (
         <ChatList
           activeTab={activeTab}
@@ -378,6 +353,7 @@ const Dashboard = () => {
           onRequestVerifyPin={handleRequestVerifyPin}
           currentUser={currentUser}
           currentTheme={currentTheme}
+          onCreateGroup={createGroupChat}
         />
       )}
 
@@ -386,47 +362,40 @@ const Dashboard = () => {
           <SettingsPanel currentUser={currentUser} updateUserProfile={updateUserProfile} />
         </div>
       ) : selectedChat ? (
-        <div className={`flex-1 flex flex-col ${currentWallpaper}`}>
-          <ChatArea
-            selectedChat={selectedChat}
-            messages={messages}
-            currentUser={currentUser}
-            message={message}
-            setMessage={setMessage}
-            onSendMessage={handleSendMessage}
-            onKeyPress={handleKeyPress}
-            onTyping={handleTyping}
-            markChatRead={markChatRead}
-            typingUsers={typingUsers}
-            messagesEndRef={messagesEndRef}
-            messagesContainerRef={messagesContainerRef}
-            scrollToBottom={scrollToBottom}
-            isSending={isSending}
-            onUpdateChatPreference={updateChatPreference}
-            onClearChat={clearChat}
-            currentTheme={currentTheme}
-          />
-        </div>
+        <ChatArea
+          selectedChat={selectedChat}
+          messages={messages}
+          currentUser={currentUser}
+          message={message}
+          setMessage={setMessage}
+          onSendMessage={handleSendMessage}
+          onSendFile={handleSendFile}
+          onKeyPress={handleKeyPress}
+          onTyping={handleTyping}
+          markChatRead={markChatRead}
+          typingUsers={typingUsers}
+          messagesEndRef={messagesEndRef}
+          messagesContainerRef={messagesContainerRef}
+          scrollToBottom={scrollToBottom}
+          isSending={isSending}
+          onUpdateChatPreference={updateChatPreference}
+          onClearChat={clearChat}
+          onUpdateGroupChat={updateGroupChat}
+          users={users}
+          currentTheme={currentTheme}
+          getDisplayId={getDisplayId}
+          getDisplayAvatar={getDisplayAvatar}
+        />
       ) : (
-        <div className={`flex-1 flex items-center justify-center ${currentWallpaper} text-center`}>
+        <div className="flex-1 flex items-center justify-center bg-gray-900 text-center">
           <div className="bg-gray-800 bg-opacity-80 p-8 rounded-xl">
-            <h3 className="text-xl font-semibold text-gray-300 mb-2">
-              Welcome to ChatApp
-            </h3>
-            <p className="text-gray-400 max-w-md mb-6">
-              Select a chat or search users to start messaging.
-            </p>
+            <h3 className="text-xl font-semibold text-gray-300 mb-2">Welcome to ChatApp</h3>
+            <p className="text-gray-400 max-w-md mb-6">Select a chat or search users to start messaging.</p>
             <div className="flex gap-4 justify-center">
-              <button
-                onClick={() => setActiveTab('chats')}
-                className={`px-4 py-2 ${currentTheme.primary} text-white rounded-lg hover:opacity-90 transition-opacity`}
-              >
+              <button onClick={() => setActiveTab('chats')} className={`px-4 py-2 ${currentTheme.primary} text-white rounded-lg hover:opacity-90 transition-opacity`}>
                 View Chats
               </button>
-              <button
-                onClick={() => setActiveTab('users')}
-                className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
-              >
+              <button onClick={() => setActiveTab('users')} className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors">
                 Find Users
               </button>
             </div>

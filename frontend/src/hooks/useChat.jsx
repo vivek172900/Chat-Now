@@ -26,7 +26,6 @@ export const useChat = () => {
     currentUserRef.current = currentUser;
   }, [currentUser]);
 
-  // Mark unread messages in a chat as read
   const markChatRead = useCallback(async (chatId) => {
     if (!chatId) return;
 
@@ -36,36 +35,111 @@ export const useChat = () => {
         const updatedIds = (res.data.messageIds || []).map(id => id.toString());
 
         const currentUserId = currentUserRef.current?._id || currentUserRef.current;
-        if (!currentUserId) {
-          // no current user known yet; still clear unread count
-          setChats(prev => prev.map(c => (c._id === chatId ? { ...c, unreadCount: 0 } : c)));
-          return;
-        }
 
+        // Update messages locally
         setMessages(prev =>
           prev.map(m => {
-            // normalize ids to string
             const mid = m._id && m._id.toString ? m._id.toString() : m._id;
             const senderId = m.sender && (m.sender._id || m.sender);
+
+            // Mark as read if it's in updatedIds OR if it's the current user's own message
             if (updatedIds.includes(mid) || senderId === currentUserId) {
-              // avoid duplicate readBy entries
               const already = (m.readBy || []).some(r => {
                 const uid = r.user && r.user.toString ? r.user.toString() : r.user;
                 const cu = currentUserId && currentUserId.toString ? currentUserId.toString() : currentUserId;
                 return uid === cu;
               });
+
               if (already) return m;
-              return { ...m, readBy: [...(m.readBy || []), { user: currentUserId, readAt: new Date() }] };
+              return {
+                ...m,
+                readBy: [...(m.readBy || []), { user: currentUserId, readAt: new Date() }],
+                status: 'seen'
+              };
             }
             return m;
           })
         );
 
-        // Clear unread count for this chat
-        setChats(prev => prev.map(c => (c._id === chatId ? { ...c, unreadCount: 0 } : c)));
+        // CRITICAL: Always set unreadCount to 0 for this chat
+        setChats(prev => prev.map(c =>
+          c._id === chatId ? { ...c, unreadCount: 0 } : c
+        ));
       }
     } catch (err) {
       console.error('Mark chat read failed:', err);
+    }
+  }, []);
+
+  const sendFileMessage = useCallback(async (chatId, file) => {
+    const tempId = `temp-file-${Date.now()}`;
+    const fileType = file.type.startsWith('image/') ? 'image' :
+      file.type.startsWith('video/') ? 'video' :
+        file.type.startsWith('audio/') ? 'audio' : 'file';
+
+    const tempMsg = {
+      _id: tempId,
+      content: file.name,
+      messageType: fileType,
+      file: {
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        preview: URL.createObjectURL(file)
+      },
+      sender: currentUserRef.current,
+      createdAt: new Date().toISOString(),
+      status: 'sending',
+    };
+
+    setMessages(prev => [...prev, tempMsg]);
+
+    // Update chat list - set unreadCount to 0 for sender
+    setChats(prev => prev.map(chat =>
+      chat._id === chatId
+        ? {
+          ...chat,
+          latestMessage: tempMsg,
+          unreadCount: 0 // Sender should see 0 unread
+        }
+        : chat
+    ));
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('chatId', chatId);
+      formData.append('messageType', fileType);
+      formData.append('clientId', tempId);
+
+      const res = await messageAPI.uploadFile(formData);
+
+      if (res.data && res.data.success) {
+        setMessages(prev =>
+          prev.map(m => (m._id === tempId ? res.data.message : m))
+        );
+
+        setChats(prev => {
+          const chatIndex = prev.findIndex(c => c._id === chatId);
+          if (chatIndex !== -1) {
+            const updated = [...prev];
+            updated[chatIndex] = {
+              ...updated[chatIndex],
+              latestMessage: res.data.message,
+              unreadCount: 0 // Ensure it stays at 0
+            };
+            return updated;
+          }
+          return prev;
+        });
+
+        return res.data.message;
+      }
+    } catch (err) {
+      setMessages(prev =>
+        prev.map(m => (m._id === tempId ? { ...m, status: 'failed' } : m))
+      );
+      throw err;
     }
   }, []);
 
@@ -86,13 +160,15 @@ export const useChat = () => {
 
         socketInstance.on('new_message', ({ chatId, message, clientId }) => {
           const activeChat = selectedChatRef.current;
+          const currentUserId = currentUserRef.current?._id || currentUserRef.current;
 
-          // Handle messages array: prefer replacing an optimistic (temp) message if clientId matches
+          // Check if this message is from current user
+          const isFromCurrentUser = message.sender?._id === currentUserId || message.sender === currentUserId;
+
+          // Handle messages array
           setMessages(prev => {
-            // If server message already exists, do nothing
             if (prev.some(m => m._id === message._id)) return prev;
 
-            // If clientId provided and a temp message exists, replace it
             if (clientId) {
               const idx = prev.findIndex(m => m._id === clientId);
               if (idx !== -1) {
@@ -102,32 +178,37 @@ export const useChat = () => {
               }
             }
 
-            // Otherwise append
             return activeChat && activeChat._id === chatId ? [...prev, message] : prev;
           });
 
-          // Update chats list; if chat exists, update it, otherwise add it
+          // Update chats list - IMPORTANT FIX HERE
           setChats(prev => {
             const found = prev.find(c => c._id === chatId);
             if (found) {
               return prev.map(chat =>
                 chat._id === chatId
                   ? {
-                      ...chat,
-                      latestMessage: message,
-                      unreadCount:
-                        activeChat && activeChat._id === chatId ? 0 : (chat.unreadCount || 0) + 1,
-                    }
+                    ...chat,
+                    latestMessage: message,
+                    // Only increment unread count if:
+                    // 1. Chat is not active (user isn't viewing it)
+                    // 2. Message is NOT from current user
+                    unreadCount:
+                      (activeChat && activeChat._id === chatId) || isFromCurrentUser
+                        ? 0
+                        : (chat.unreadCount || 0) + 1,
+                  }
                   : chat
               );
             }
 
-            // Chat not found locally, fetch or add placeholder
+            // Chat not found locally
             const newChatPlaceholder = {
               _id: chatId,
               participants: [],
               latestMessage: message,
-              unreadCount: activeChat && activeChat._id === chatId ? 0 : 1,
+              // Only set unread count if message is NOT from current user
+              unreadCount: (activeChat && activeChat._id === chatId) || isFromCurrentUser ? 0 : 1,
               preference: { isArchived: false, isFavorite: false }
             };
 
@@ -139,7 +220,6 @@ export const useChat = () => {
             const myId = currentUserRef.current?._id || currentUserRef.current;
             const senderId = message?.sender?._id || message?.sender;
             if (myId && senderId && senderId.toString() !== myId.toString()) {
-              // tell server we received it
               socketEmit.delivered(message._id || message._id?.toString());
             }
           } catch (err) {
@@ -152,13 +232,13 @@ export const useChat = () => {
             prev.map(msg =>
               msg._id === messageId
                 ? {
-                    ...msg,
-                    readBy: [
-                      ...(msg.readBy || []),
-                      { user: readBy, readAt: new Date() },
-                    ],
-                    status: 'seen'
-                  }
+                  ...msg,
+                  readBy: [
+                    ...(msg.readBy || []),
+                    { user: readBy, readAt: new Date() },
+                  ],
+                  status: 'seen'
+                }
                 : msg
             )
           );
@@ -201,6 +281,30 @@ export const useChat = () => {
             if (prev.some(c => c._id === chat._id)) return prev;
             return [{ ...chat, unreadCount: chat.unreadCount || 0 }, ...prev];
           });
+
+          // Auto-join the chat room so we receive real-time events
+          try {
+            socketEmit.joinChat(chat._id);
+          } catch (err) {
+            // ignore
+          }
+        });
+
+        // Chat updated (group rename, participants changed)
+        socketInstance.on('chat_updated', ({ chat }) => {
+          setChats(prev => prev.map(c => (c._id === chat._id ? { ...c, ...chat } : c)));
+          if (selectedChatRef.current && selectedChatRef.current._id === chat._id) {
+            setSelectedChat(chat);
+          }
+        });
+
+        // Chat deleted - remove from list and deselect if active
+        socketInstance.on('chat_deleted', ({ chatId }) => {
+          setChats(prev => prev.filter(c => c._id !== chatId));
+          if (selectedChatRef.current && selectedChatRef.current._id === chatId) {
+            setSelectedChat(null);
+            setMessages([]);
+          }
         });
 
         socketInstance.on('typing_indicator', ({ chatId, userId, isTyping }) => {
@@ -309,29 +413,37 @@ export const useChat = () => {
         status: 'sending',
       };
 
+      // Add to messages
       setMessages(prev => [...prev, tempMsg]);
 
+      // Update chat list - set unreadCount to 0 for sender
+      setChats(prev => prev.map(chat =>
+        chat._id === chatId
+          ? {
+            ...chat,
+            latestMessage: tempMsg,
+            unreadCount: 0 // Sender should see 0 unread
+          }
+          : chat
+      ));
+
       try {
-        // include clientId so server can echo it back and we can replace the temp message cleanly
         const res = await messageAPI.sendMessage({ chatId, content, clientId: tempId });
         if (res.data.success) {
-          // If chat was created server-side, ensure it's in the chat list
           if (res.data.chat) {
             setChats(prev => {
               if (prev.some(c => c._id === res.data.chat._id)) return prev;
-              return [{ ...res.data.chat }, ...prev];
+              return [{ ...res.data.chat, unreadCount: 0 }, ...prev];
             });
-            // If we weren't already selected into this chat, select it now
+
             if (!selectedChatRef.current || selectedChatRef.current._id !== res.data.chat._id) {
               await setSelectedChat(res.data.chat);
             }
           }
 
-          // If server already sent us the message via socket and replaced the temp, this will no-op
           setMessages(prev =>
             prev.map(m => (m._id === tempId ? res.data.message : m))
           );
-          // No need to emit via socket here - backend emits when message is saved
         }
       } catch (err) {
         setMessages(prev =>
@@ -342,17 +454,23 @@ export const useChat = () => {
     []
   );
 
-  const markMessageAsRead = useCallback(
-    async (messageId) => {
-      try {
-        socketEmit.markAsRead(messageId);
-        await messageAPI.markAsRead(messageId);
-      } catch (err) {
-        console.error(err);
-      }
-    },
-    []
-  );
+  const markMessageAsRead = useCallback(async (messageId) => {
+    try {
+      await messageAPI.markAsRead(messageId);
+      // Update local state
+      setMessages(prev => prev.map(msg =>
+        msg._id === messageId
+          ? {
+            ...msg,
+            readBy: [...(msg.readBy || []), { user: currentUserRef.current, readAt: new Date() }],
+            status: 'seen'
+          }
+          : msg
+      ));
+    } catch (err) {
+      console.error('Mark message as read failed:', err);
+    }
+  }, []);
 
   const sendTypingIndicator = useCallback(
     (chatId, isTyping) => {
@@ -381,12 +499,34 @@ export const useChat = () => {
         // Ensure chat is present in local state
         setChats(prev => {
           if (prev.some(c => c._id === chat._id)) return prev;
-          return [ { ...chat }, ...prev ];
+          return [{ ...chat }, ...prev];
         });
         return chat;
       }
     } catch (err) {
       console.error(err);
+    }
+    return null;
+  }, []);
+
+  // Create a group chat
+  const createGroupChat = useCallback(async (chatName, participantIds = []) => {
+    try {
+      const res = await chatAPI.createGroupChat({ chatName, participants: participantIds });
+      if (res.data && res.data.success) {
+        const chat = res.data.chat;
+        setChats(prev => {
+          if (prev.some(c => c._id === chat._id)) return prev;
+          return [{ ...chat, unreadCount: 0 }, ...prev];
+        });
+        // Auto-select new chat: fetch messages and join socket room
+        setSelectedChat(chat);
+        await fetchMessages(chat._id);
+        socketEmit.joinChat(chat._id);
+        return chat;
+      }
+    } catch (err) {
+      console.error('Create group chat failed:', err);
     }
     return null;
   }, []);
@@ -419,6 +559,22 @@ export const useChat = () => {
       }
     } catch (err) {
       console.error(err);
+    }
+    return { success: false };
+  }, [selectedChat]);
+
+  // Update group metadata (name, participants, admin)
+  const updateGroupChat = useCallback(async (chatId, chatData) => {
+    try {
+      const res = await chatAPI.updateGroupChat(chatId, chatData);
+      if (res.data && res.data.success) {
+        const ch = res.data.chat;
+        setChats(prev => prev.map(c => (c._id === ch._id ? { ...c, ...ch } : c)));
+        if (selectedChat && selectedChat._id === ch._id) setSelectedChat(ch);
+        return { success: true, chat: ch };
+      }
+    } catch (err) {
+      console.error('Update group chat failed:', err);
     }
     return { success: false };
   }, [selectedChat]);
@@ -524,6 +680,7 @@ export const useChat = () => {
 
   return {
     currentUser,
+    sendFileMessage,
     messages,
     chats: getFilteredChats(),
     users,
@@ -550,9 +707,10 @@ export const useChat = () => {
     scrollToBottom,
     getTotalUnreadCount,
     markChatRead,
-    // New helpers
     setPin,
     verifyPin,
     deleteChat,
+    createGroupChat,
+    updateGroupChat,
   };
 };

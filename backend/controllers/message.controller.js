@@ -14,28 +14,26 @@ const sendMessage = async (req, res) => {
         return res.status(400).json({ error: 'chatId or recipientId required' });
       }
 
-      // find existing direct chat
       chat = await Chat.findOne({
         isGroupChat: false,
         participants: { $all: [userId, recipientId], $size: 2 }
       });
 
-      // create chat if not exists
       if (!chat) {
         chat = new Chat({ participants: [userId, recipientId], isGroupChat: false });
         await chat.save();
 
-        // populate
         chat = await Chat.findById(chat._id).populate('participants', '-__v -createdAt -updatedAt');
 
-        // Notify both users of new chat
         try {
           const io = getIO();
           chat.participants.forEach(p => {
-            io.to(`user_${p._id.toString()}`).emit('new_chat', { chat: {
-              ...chat.toObject(),
-              preference: { isArchived: false, isFavorite: false }
-            }});
+            io.to(`user_${p._id.toString()}`).emit('new_chat', {
+              chat: {
+                ...chat.toObject(),
+                preference: { isArchived: false, isFavorite: false }
+              }
+            });
           });
         } catch (err) {
           console.error('Failed to emit new_chat after sendMessage:', err.message);
@@ -57,7 +55,6 @@ const sendMessage = async (req, res) => {
       messageType,
       mediaUrl,
       status: "sent",
-      // mark the sender as having read their own message
       readBy: [{ user: userId, readAt: new Date() }],
     });
 
@@ -65,9 +62,8 @@ const sendMessage = async (req, res) => {
     await chat.save();
 
     const populatedMessage = await Message.findById(message._id)
-      .populate("sender", "username profilePic");
+      .populate("sender", "username profilePic userId");
 
-    // 🔥 SOCKET EMIT - include optional clientId so sender can correlate optimistic message
     const io = getIO();
     io.to(`chat_${chatId}`).emit("new_message", {
       chatId,
@@ -80,6 +76,85 @@ const sendMessage = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+const uploadFileMessage = async (req, res) => {
+  console.log('=== FILE UPLOAD REQUEST ===');
+  console.log('Body:', req.body);
+  console.log('File:', req.file);
+  console.log('User:', req.user._id);
+  
+  try {
+    const { chatId, messageType = 'file', clientId } = req.body;
+    const userId = req.user._id;
+
+    if (!chatId) {
+      return res.status(400).json({ error: 'chatId is required' });
+    }
+
+    const chat = await Chat.findById(chatId);
+    if (!chat || !chat.participants.includes(userId)) {
+      return res.status(403).json({ error: "Not allowed" });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const fileType = getFileType(req.file.mimetype);
+    const fileUrl = `/uploads/${req.file.filename}`;
+    const fullUrl = `${req.protocol}://${req.get('host')}${fileUrl}`;
+
+    console.log('Creating message with file:', {
+      name: req.file.originalname,
+      size: req.file.size,
+      type: req.file.mimetype,
+      url: fullUrl
+    });
+
+    // SIMPLIFIED: Save only the URL string for now
+    const message = await Message.create({
+      sender: userId,
+      chat: chatId,
+      content: req.file.originalname,
+      messageType: fileType,
+      mediaUrl: fullUrl, // Save as string for now
+      file: undefined, // Don't set file field
+      status: "sent",
+      readBy: [{ user: userId, readAt: new Date() }],
+    });
+
+    chat.latestMessage = message._id;
+    await chat.save();
+
+    const populatedMessage = await Message.findById(message._id)
+      .populate("sender", "username profilePic userId");
+
+    const io = getIO();
+    io.to(`chat_${chatId}`).emit("new_message", {
+      chatId,
+      message: populatedMessage,
+      clientId: clientId || null,
+    });
+
+    res.status(201).json({ 
+      success: true, 
+      message: populatedMessage, 
+      clientId: clientId || null 
+    });
+  } catch (error) {
+    console.error('File upload error details:', error);
+    res.status(500).json({ error: 'Failed to upload file: ' + error.message });
+  }
+};
+
+const getFileType = (mimeType) => {
+  if (mimeType.startsWith('image/')) return 'image';
+  if (mimeType.startsWith('video/')) return 'video';
+  if (mimeType.startsWith('audio/')) return 'audio';
+  return 'file';
+};
+
+
 
 const getChatMessages = async (req, res) => {
   try {
@@ -231,4 +306,5 @@ module.exports = {
   deleteMessage,
   markChatAsRead,
   clearChat,
+  uploadFileMessage
 };

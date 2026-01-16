@@ -90,8 +90,18 @@ const createGroupChat = async (req, res) => {
     // Add current user to participants
     const allParticipants = [...new Set([currentUser._id.toString(), ...participants])];
 
-    if (allParticipants.length < 3) {
-      return res.status(400).json({ success: false, error: 'Group chat must have at least 3 participants' });
+    // Minimum 2 members total (including current user)
+    if (allParticipants.length < 2) {
+      return res.status(400).json({ success: false, error: 'Group chat must have at least 2 participants' });
+    }
+
+    // Check if all participants exist
+    const usersExist = await User.find({ 
+      _id: { $in: allParticipants } 
+    }).select('_id');
+    
+    if (usersExist.length !== allParticipants.length) {
+      return res.status(400).json({ success: false, error: 'One or more participants not found' });
     }
 
     const chat = new Chat({
@@ -106,6 +116,21 @@ const createGroupChat = async (req, res) => {
     const populatedChat = await Chat.findById(chat._id)
       .populate('participants', '-__v -createdAt -updatedAt')
       .populate('admin', '-__v -createdAt -updatedAt');
+
+    // Emit new_chat to participants so their clients add it
+    try {
+      const io = require('../socket/socket').getIO();
+      populatedChat.participants.forEach(p => {
+        io.to(`user_${p._id.toString()}`).emit('new_chat', { 
+          chat: { 
+            ...populatedChat.toObject(), 
+            preference: { isArchived: false, isFavorite: false } 
+          } 
+        });
+      });
+    } catch (err) {
+      console.error('Failed to emit new_chat for group creation:', err.message);
+    }
 
     res.status(201).json({
       success: true,
@@ -250,6 +275,17 @@ const updateGroupChat = async (req, res) => {
       .populate('participants', '-__v -createdAt -updatedAt')
       .populate('admin', '-__v -createdAt -updatedAt');
 
+    // Emit update events to chat room and to participants (so newly added members see it)
+    try {
+      const io = require('../socket/socket').getIO();
+      io.to(`chat_${updatedChat._id}`).emit('chat_updated', { chat: updatedChat });
+      updatedChat.participants.forEach(p => {
+        io.to(`user_${p._id.toString()}`).emit('new_chat', { chat: { ...updatedChat.toObject(), preference: { isArchived: false, isFavorite: false } } });
+      });
+    } catch (err) {
+      console.error('Failed to emit chat_updated:', err.message);
+    }
+
     res.json({
       success: true,
       chat: updatedChat
@@ -268,8 +304,10 @@ const deleteChat = async (req, res) => {
     const chat = await Chat.findById(chatId);
     if (!chat) return res.status(404).json({ success: false, error: 'Chat not found' });
 
+    const participantIds = chat.participants.map(p => p.toString());
+
     // Ensure user is a participant
-    if (!chat.participants.map(p => p.toString()).includes(currentUser._id.toString())) {
+    if (!participantIds.includes(currentUser._id.toString())) {
       return res.status(403).json({ success: false, error: 'Not authorized' });
     }
 
@@ -278,6 +316,16 @@ const deleteChat = async (req, res) => {
     await ChatPreference.deleteMany({ chat: chatId });
 
     await Chat.findByIdAndDelete(chatId);
+
+    // Emit chat_deleted to participants so clients can remove it from lists
+    try {
+      const io = require('../socket/socket').getIO();
+      participantIds.forEach(pid => {
+        io.to(`user_${pid}`).emit('chat_deleted', { chatId });
+      });
+    } catch (err) {
+      console.error('Failed to emit chat_deleted:', err.message);
+    }
 
     res.json({ success: true, message: 'Chat deleted' });
   } catch (error) {

@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { Phone, Video, MoreVertical, Smile, Send, Paperclip, Mic } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Phone, Video, MoreVertical, UserPlus } from 'lucide-react';
 import MessageBubble from './MessageBubble';
 import ShowProfile from './ShowProfile';
+import MessageInput from './MessageInput';
+import SearchUserModal from '../chatList/searchUserModel';
 
 const ChatArea = ({
   selectedChat,
@@ -10,18 +12,19 @@ const ChatArea = ({
   message,
   setMessage,
   onSendMessage,
+  onSendFile,
   onKeyPress,
   onTyping,
-  onFocus: onFocusProp,
-  onClick: onClickProp,
   markChatRead,
   typingUsers,
   messagesEndRef,
   messagesContainerRef,
   scrollToBottom,
   isSending = false,
-  onUpdateChatPreference, // (chatId, preference)
-  onClearChat, // (chatId)
+  onUpdateChatPreference,
+  onClearChat,
+  onUpdateGroupChat,
+  users = [],
   currentTheme = {
     primary: 'bg-gray-800',
     secondary: 'bg-gray-800',
@@ -30,17 +33,17 @@ const ChatArea = ({
     bubbleOther: 'bg-gray-700',
     textUser: 'text-white',
     textOther: 'text-white'
-  }
+  },
+  getDisplayId,
+  getDisplayAvatar
 }) => {
-  const [isTyping, setIsTyping] = useState(false);
-  const [typingTimeout, setTypingTimeout] = useState(null);
-
   const [showProfile, setShowProfile] = useState(false);
   const [profileUser, setProfileUser] = useState(null);
-
   const [showMenu, setShowMenu] = useState(false);
-  const [showWallpaperPicker, setShowWallpaperPicker] = useState(false);
   const [localWallpaper, setLocalWallpaper] = useState(selectedChat?.preference?.wallpaper || null);
+  const [unreadMessages, setUnreadMessages] = useState([]);
+  const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+  const observerRef = useRef(null);
 
   const isSomeoneTyping = selectedChat &&
     typingUsers[selectedChat._id] &&
@@ -48,34 +51,88 @@ const ChatArea = ({
       time && Date.now() - new Date(time).getTime() < 3000
     );
 
-  const handleTyping = (e) => {
-    const value = e.target.value;
-    setMessage(value);
-
-    if (!isTyping && value.trim()) {
-      setIsTyping(true);
-      markChatRead?.(selectedChat?._id);
-      onTyping?.(true);
+  useEffect(() => {
+    if (!selectedChat || !currentUser || messages.length === 0) {
+      setUnreadMessages([]);
+      return;
     }
 
-    if (typingTimeout) {
-      clearTimeout(typingTimeout);
-    }
-
-    const timeout = setTimeout(() => {
-      if (isTyping) {
-        setIsTyping(false);
-        onTyping?.(false);
+    const unread = messages.filter(msg => {
+      if (msg.sender?._id === currentUser._id || msg.sender === currentUser._id) {
+        return false;
       }
-    }, 1000);
 
-    setTypingTimeout(timeout);
-  };
+      const isRead = msg.readBy?.some(read =>
+        read.user === currentUser._id || read.user?._id === currentUser._id
+      );
+
+      return !isRead;
+    });
+
+    setUnreadMessages(unread);
+  }, [messages, currentUser, selectedChat]);
+
+  useEffect(() => {
+    if (!selectedChat || unreadMessages.length === 0) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            const messageId = entry.target.dataset.messageId;
+            if (messageId) {
+              const message = unreadMessages.find(msg => msg._id === messageId);
+              if (message) {
+                markChatRead?.(selectedChat._id);
+              }
+            }
+          }
+        });
+      },
+      {
+        root: messagesContainerRef.current,
+        threshold: 0.5,
+      }
+    );
+
+    unreadMessages.forEach(msg => {
+      const element = document.querySelector(`[data-message-id="${msg._id}"]`);
+      if (element) {
+        observer.observe(element);
+      }
+    });
+
+    observerRef.current = observer;
+
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+      }
+    };
+  }, [unreadMessages, selectedChat, markChatRead, messagesContainerRef]);
+
+  useEffect(() => {
+    if (selectedChat && messages.length > 0) {
+      const timer = setTimeout(() => {
+        markChatRead?.(selectedChat._id);
+      }, 500);
+
+      return () => clearTimeout(timer);
+    }
+  }, [selectedChat, markChatRead]);
+
+  useEffect(() => {
+    if (unreadMessages.length > 0 && messagesContainerRef.current) {
+      const firstUnreadId = unreadMessages[0]._id;
+      const firstUnreadElement = document.querySelector(`[data-message-id="${firstUnreadId}"]`);
+      if (firstUnreadElement) {
+        firstUnreadElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }, [unreadMessages]);
 
   const handleProfileClick = () => {
     if (isGroupChat) {
-      // For group chat, you might want to show group info instead
-      // or show a list of participants
       return;
     }
 
@@ -86,24 +143,11 @@ const ChatArea = ({
   };
 
   useEffect(() => {
-    return () => {
-      if (typingTimeout) {
-        clearTimeout(typingTimeout);
-      }
-      if (isTyping) {
-        onTyping?.(false);
-      }
-    };
-  }, [typingTimeout, isTyping, onTyping]);
-
-  useEffect(() => {
-    // keep a local wallpaper value in sync when selectedChat or currentUser changes
     setLocalWallpaper(selectedChat?.preference?.wallpaper ?? currentUser?.wallpaper ?? null);
     scrollToBottom();
   }, [messages, scrollToBottom, selectedChat, currentUser]);
 
   useEffect(() => {
-    // if user's default wallpaper changes, update local wallpaper when no chat preference is set
     if (!selectedChat?.preference?.wallpaper) {
       setLocalWallpaper(currentUser?.wallpaper ?? null);
     }
@@ -119,36 +163,22 @@ const ChatArea = ({
   const otherParticipant = getOtherParticipant();
   const isGroupChat = selectedChat?.isGroupChat;
 
-  // Get display ID for user - UPDATED to show userId
-  const getDisplayId = (user) => {
-    if (!user) return 'Unknown';
-    // Show userId if available, otherwise fallback to truncated _id
-    return user?.userId || user?._id?.slice(-8) || 'Unknown';
-  };
-
-  // Get display avatar for user - using first character of userId or ID
-  const getDisplayAvatar = (user) => {
-    if (!user) return 'U';
-    // Use first character of userId if available, otherwise use first character of _id
-    const displayId = user?.userId || user?._id || 'U';
-    return displayId.charAt(0).toUpperCase();
-  };
-
-  // Get display name with userId - UPDATED
-  const getDisplayName = (user) => {
-    if (!user) return 'Unknown User';
+  const handleAddMember = async (user) => {
+    const existing = selectedChat.participants?.map(p => p._id || p) || [];
     
-    // For group chat name
-    if (selectedChat?.isGroupChat && selectedChat?.chatName) {
-      return selectedChat.chatName;
+    if (existing.includes(user._id)) {
+      alert(`${user.username} is already in this group`);
+      return;
     }
     
-    // For other participant in 1:1 chat
-    if (user) {
-      return user?.userId || `User ${user?._id?.slice(-4)}`;
-    }
+    const newParticipants = [...existing, user._id];
+    await onUpdateGroupChat?.(selectedChat._id, { participants: newParticipants });
     
-    return 'Unknown User';
+    alert(`${user.username} has been added to the group`);
+  };
+
+  const handleSearchUserSelect = (user) => {
+    handleAddMember(user);
   };
 
   const renderChatHeader = () => (
@@ -194,11 +224,25 @@ const ChatArea = ({
               ? `${selectedChat.participants?.length || 0} members`
               : (otherParticipant?.isOnline ? 'Online' : 'Offline')
             }
+            {unreadMessages.length > 0 && (
+              <span className="ml-2 bg-blue-500 text-white text-xs px-2 py-0.5 rounded-full">
+                {unreadMessages.length} unread
+              </span>
+            )}
           </p>
         </div>
       </div>
 
       <div className="flex items-center space-x-2">
+        {isGroupChat && (
+          <button
+            onClick={() => setShowAddMemberModal(true)}
+            className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
+            title="Add member"
+          >
+            <UserPlus className="w-5 h-5" />
+          </button>
+        )}
         <button className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors">
           <Phone className="w-5 h-5" />
         </button>
@@ -207,7 +251,7 @@ const ChatArea = ({
         </button>
         <div className="relative">
           <button
-            onClick={() => { setShowMenu(s => !s); setShowWallpaperPicker(false); }}
+            onClick={() => { setShowMenu(s => !s); }}
             className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
             aria-haspopup="true"
             aria-expanded={showMenu}
@@ -222,8 +266,118 @@ const ChatArea = ({
                 {!isGroupChat && otherParticipant && (
                   <div className="truncate mt-1">User ID: {getDisplayId(otherParticipant)}</div>
                 )}
+                {unreadMessages.length > 0 && (
+                  <div className="truncate mt-1 text-blue-400">
+                    {unreadMessages.length} unread messages
+                  </div>
+                )}
               </div>
-              
+
+              {isGroupChat && (
+                <>
+                  <button
+                    className="w-full text-left px-4 py-2 hover:bg-gray-700 text-gray-300"
+                    onClick={async () => {
+                      setShowMenu(false);
+                      const newName = window.prompt('Enter new group name', selectedChat?.chatName || '');
+                      if (!newName || newName.trim().length === 0) return;
+                      if (newName.length > 100) {
+                        alert('Group name must be less than 100 characters');
+                        return;
+                      }
+                      await onUpdateGroupChat?.(selectedChat._id, { chatName: newName.trim() });
+                    }}
+                  >
+                    Rename group
+                  </button>
+
+                  <button
+                    className="w-full text-left px-4 py-2 hover:bg-gray-700 text-gray-300"
+                    onClick={() => {
+                      setShowMenu(false);
+                      setShowAddMemberModal(true);
+                    }}
+                  >
+                    Add participant
+                  </button>
+
+                  <button
+                    className="w-full text-left px-4 py-2 hover:bg-gray-700 text-gray-300"
+                    onClick={async () => {
+                      setShowMenu(false);
+
+                      if (selectedChat.participants?.length <= 2) {
+                        alert('Cannot remove participants - group must have at least 2 members');
+                        return;
+                      }
+
+                      const query = window.prompt('Enter userId or username to remove');
+                      if (!query) return;
+
+                      const match = selectedChat.participants?.find(p =>
+                        p.userId === query ||
+                        p.username === query ||
+                        p._id === query
+                      );
+
+                      if (!match) {
+                        alert(`No participant found: ${query}`);
+                        return;
+                      }
+
+                      if (match._id === selectedChat.admin?._id || match._id === selectedChat.admin) {
+                        alert('Cannot remove group admin');
+                        return;
+                      }
+
+                      const existing = selectedChat.participants?.map(p => p._id || p);
+                      const newParticipants = existing.filter(id => id !== match._id);
+                      await onUpdateGroupChat?.(selectedChat._id, { participants: newParticipants });
+                    }}
+                  >
+                    Remove participant
+                  </button>
+
+                  <button
+                    className="w-full text-left px-4 py-2 hover:bg-gray-700 text-gray-300"
+                    onClick={async () => {
+                      setShowMenu(false);
+                      const query = window.prompt('Enter userId or username to make admin');
+                      if (!query) return;
+
+                      const match = selectedChat.participants?.find(p =>
+                        p.userId === query ||
+                        p.username === query ||
+                        p._id === query
+                      );
+
+                      if (!match) {
+                        alert(`No participant found: ${query}`);
+                        return;
+                      }
+
+                      await onUpdateGroupChat?.(selectedChat._id, { admin: match._id });
+                    }}
+                  >
+                    Make admin
+                  </button>
+
+                  <div className="border-t border-gray-700 my-1"></div>
+                </>
+              )}
+
+              <button
+                className="w-full text-left px-4 py-2 hover:bg-gray-700 text-blue-400"
+                onClick={() => {
+                  setShowMenu(false);
+                  if (unreadMessages.length > 0) {
+                    markChatRead?.(selectedChat._id);
+                  }
+                }}
+              >
+                Mark all as read
+              </button>
+
               <button
                 className="w-full text-left px-4 py-2 hover:bg-gray-700 text-red-400"
                 onClick={async () => {
@@ -243,19 +397,51 @@ const ChatArea = ({
     </div>
   );
 
-  const wallpapers = [
-    { id: null, label: 'Default', style: 'bg-gray-900' },
-    { id: 'blue-gradient', label: 'Blue gradient', style: 'bg-gradient-to-r from-blue-800 to-cyan-600' },
-    { id: 'purple-pink', label: 'Purple / Pink', style: 'bg-gradient-to-r from-purple-500 to-pink-500' },
-    { id: 'sunset', label: 'Sunset', style: 'bg-gradient-to-r from-yellow-400 to-orange-500' },
-    { id: 'green', label: 'Green', style: 'bg-gradient-to-r from-emerald-400 to-green-600' },
-  ];
+  const getDisplayName = (user) => {
+    if (!user) return 'Unknown User';
+
+    if (selectedChat?.isGroupChat && selectedChat?.chatName) {
+      return selectedChat.chatName;
+    }
+
+    if (user) {
+      return user?.userId || `User ${user?._id?.slice(-4)}`;
+    }
+
+    return 'Unknown User';
+  };
 
   const renderMessages = () => (
     <div
       ref={messagesContainerRef}
       className="flex-1 overflow-y-auto p-4 space-y-4"
-      style={{ maxHeight: 'calc(100vh - 140px)' }} // Fixed height for scrolling
+      style={{ maxHeight: 'calc(100vh - 140px)' }}
+      onScroll={() => {
+        if (unreadMessages.length > 0) {
+          const container = messagesContainerRef.current;
+          if (container) {
+            const scrollTop = container.scrollTop;
+            const containerHeight = container.clientHeight;
+
+            const visibleMessages = unreadMessages.filter(msg => {
+              const element = document.querySelector(`[data-message-id="${msg._id}"]`);
+              if (!element) return false;
+
+              const rect = element.getBoundingClientRect();
+              const containerRect = container.getBoundingClientRect();
+
+              return (
+                rect.top >= containerRect.top &&
+                rect.bottom <= containerRect.bottom
+              );
+            });
+
+            if (visibleMessages.length > 0) {
+              markChatRead?.(selectedChat._id);
+            }
+          }
+        }
+      }}
     >
       {messages.length === 0 ? (
         <div className="text-center text-gray-400 py-8">
@@ -269,26 +455,57 @@ const ChatArea = ({
         </div>
       ) : (
         <>
+          {unreadMessages.length > 0 && (
+            <div className="sticky top-2 z-10">
+              <div className="flex items-center justify-center">
+                <div className="bg-blue-500 text-white px-3 py-1 rounded-full text-sm font-medium flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                  <span>{unreadMessages.length} unread message{unreadMessages.length !== 1 ? 's' : ''}</span>
+                  <button
+                    onClick={() => markChatRead?.(selectedChat._id)}
+                    className="ml-2 text-xs bg-white/20 hover:bg-white/30 px-2 py-0.5 rounded transition-colors"
+                  >
+                    Mark as read
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {messages.map((msg, index) => {
             const prevMessage = messages[index - 1];
             const showAvatar = isGroupChat &&
               msg.sender?._id !== currentUser?._id &&
               (index === 0 || prevMessage?.sender?._id !== msg.sender?._id);
 
+            const isUnread = unreadMessages.some(unread => unread._id === msg._id);
+            const isOwnMessage = msg.sender?._id === currentUser?._id;
+
             return (
-              <MessageBubble
+              <div
                 key={msg._id || `temp-${index}`}
-                message={msg}
-                isOwn={msg.sender?._id === currentUser?._id}
-                showAvatar={showAvatar}
-                sender={msg.sender}
-                isSending={msg.status === 'sending'}
-                isFailed={msg.status === 'failed'}
-                currentTheme={currentTheme}
-                currentUser={currentUser}
-                getDisplayId={getDisplayId}
-                getDisplayAvatar={getDisplayAvatar}
-              />
+                data-message-id={msg._id}
+                className={`relative ${isUnread && !isOwnMessage ? 'unread-message' : ''}`}
+              >
+                {isUnread && !isOwnMessage && (
+                  <div className="absolute left-0 top-1/2 transform -translate-x-4 -translate-y-1/2">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                  </div>
+                )}
+
+                <MessageBubble
+                  message={msg}
+                  isOwn={isOwnMessage}
+                  showAvatar={showAvatar}
+                  sender={msg.sender}
+                  isSending={msg.status === 'sending'}
+                  isFailed={msg.status === 'failed'}
+                  currentTheme={currentTheme}
+                  currentUser={currentUser}
+                  getDisplayId={getDisplayId}
+                  getDisplayAvatar={getDisplayAvatar}
+                />
+              </div>
             );
           })}
 
@@ -322,90 +539,26 @@ const ChatArea = ({
     </div>
   );
 
-  const renderMessageInput = () => (
-    <div className="border-t border-gray-700 p-4 bg-gray-800 flex-shrink-0">
-      <div className="flex items-center space-x-2">
-        <button className="p-2 text-gray-400 hover:text-white transition-colors">
-          <Paperclip className="w-5 h-5" />
-        </button>
-
-        <div className="flex-1 relative">
-          <input
-            type="text"
-            value={message}
-            onChange={handleTyping}
-            onFocus={() => markChatRead?.(selectedChat?._id)}
-            onKeyPress={onKeyPress}
-            placeholder="Type a message..."
-            className="w-full bg-gray-700 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400 disabled:opacity-50"
-            disabled={isSending}
-          />
-          {isSending && (
-            <div className="absolute right-3 top-3">
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-            </div>
-          )}
-        </div>
-
-        {message.trim() && !isSending ? (
-          <button
-            onClick={onSendMessage}
-            disabled={isSending}
-            className={`p-3 ${currentTheme.bubbleUser || 'bg-blue-500'} text-white rounded-lg hover:opacity-90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
-          >
-            <Send className="w-5 h-5" />
-          </button>
-        ) : (
-          <button
-            className="p-3 text-gray-400 hover:text-white transition-colors disabled:opacity-50"
-            disabled={isSending}
-          >
-            <Mic className="w-5 h-5" />
-          </button>
-        )}
-
-        <button className="p-2 text-gray-400 hover:text-white transition-colors">
-          <Smile className="w-5 h-5" />
-        </button>
-      </div>
-    </div>
-  );
-
-  const wallpaperObj = wallpapers.find(w => w.id === localWallpaper);
-  const wallpaperClass = wallpaperObj ? wallpaperObj.style : (currentUser?.wallpaper ? wallpapers[currentUser.wallpaper] || 'bg-gray-900' : 'bg-gray-900');
+  const wallpaperClass = 'bg-gray-900';
 
   return (
     <div className={`flex-1 flex flex-col h-full ${wallpaperClass}`} onClick={() => markChatRead?.(selectedChat?._id)}>
       {renderChatHeader()}
-      {showWallpaperPicker && (
-        <div className="absolute right-6 top-20 z-30 bg-gray-800 border border-gray-700 rounded-lg p-3 shadow-lg">
-          <h4 className="text-sm text-gray-300 mb-2">Choose wallpaper</h4>
-          <div className="grid grid-cols-3 gap-2">
-            {wallpapers.map(w => (
-              <button
-                key={w.id || 'default'}
-                onClick={async () => {
-                  setLocalWallpaper(w.id);
-                  setShowWallpaperPicker(false);
-                  // persist preference
-                  try {
-                    await onUpdateChatPreference?.(selectedChat._id, { wallpaper: w.id });
-                  } catch (err) {
-                    console.error('Failed to update wallpaper preference:', err);
-                  }
-                }}
-                className={`w-20 h-12 rounded ${w.style} ${w.id === localWallpaper ? 'ring-2 ring-blue-400' : ''}`}
-                title={w.label}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
       {renderMessages()}
-      {renderMessageInput()}
 
-      {/* Add ShowProfile component here */}
+      <MessageInput
+        message={message}
+        setMessage={setMessage}
+        onSendMessage={onSendMessage}
+        onSendFile={onSendFile}
+        onKeyPress={onKeyPress}
+        onTyping={onTyping}
+        isSending={isSending}
+        markChatRead={markChatRead}
+        selectedChat={selectedChat}
+        currentTheme={currentTheme}
+      />
+
       <ShowProfile
         user={profileUser}
         isOpen={showProfile}
@@ -413,6 +566,15 @@ const ChatArea = ({
         getDisplayId={getDisplayId}
         getDisplayAvatar={getDisplayAvatar}
       />
+
+      {showAddMemberModal && (
+        <SearchUserModal
+          open={showAddMemberModal}
+          onClose={() => setShowAddMemberModal(false)}
+          users={users}
+          onSelectUser={handleSearchUserSelect}
+        />
+      )}
     </div>
   );
 };

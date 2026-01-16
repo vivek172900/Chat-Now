@@ -1,12 +1,19 @@
 import React, { useState } from "react";
 import Menu from "./Menu";
 import { motion } from "framer-motion";
-import { MessageCircle, Menu as MenuIcon, X } from "lucide-react";
+import { MessageCircle, Menu as MenuIcon, X, LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@clerk/clerk-react";
 
 export default function Navbar() {
     const [showOptions, setShowOptions] = useState(false);
     const navigate = useNavigate();
+    const { isSignedIn, signOut } = useAuth();
+
+    const handleLogout = async () => {
+        await signOut();
+        navigate('/');
+    };
 
     const toggleMenu = () => {
         setShowOptions((prev) => !prev);
@@ -57,22 +64,46 @@ export default function Navbar() {
 
                     {/* Desktop Auth Buttons */}
                     <div className="hidden md:flex items-center space-x-4">
-                        <motion.button
-                            onClick={() => navigate('/login')}
-                            className="text-gray-300 hover:text-white transition-colors duration-300 font-medium"
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                        >
-                            Sign In
-                        </motion.button>
-                        <motion.button
-                            onClick={() => navigate('/signup')}
-                            className="bg-gradient-to-r from-cyan-500 to-purple-600 text-white px-6 py-2 rounded-xl font-semibold hover:from-cyan-600 hover:to-purple-700 transition-all duration-300"
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                        >
-                            Get Started
-                        </motion.button>
+                        {!isSignedIn ? (
+                            <>
+                                <motion.button
+                                    onClick={() => navigate('/login')}
+                                    className="text-gray-300 hover:text-white transition-colors duration-300 font-medium"
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
+                                >
+                                    Sign In
+                                </motion.button>
+                                <motion.button
+                                    onClick={() => navigate('/signup')}
+                                    className="bg-gradient-to-r from-cyan-500 to-purple-600 text-white px-6 py-2 rounded-xl font-semibold hover:from-cyan-600 hover:to-purple-700 transition-all duration-300"
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
+                                >
+                                    Get Started
+                                </motion.button>
+                            </>
+                        ) : (
+                            <>
+                                <motion.button
+                                    onClick={() => navigate('/chat')}
+                                    className="text-gray-300 hover:text-white transition-colors duration-300 font-medium"
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
+                                >
+                                    Dashboard
+                                </motion.button>
+                                <motion.button
+                                    onClick={handleLogout}
+                                    className="bg-gradient-to-r from-red-500 to-red-600 text-white px-6 py-2 rounded-xl font-semibold hover:from-red-600 hover:to-red-700 transition-all duration-300 flex items-center gap-2"
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
+                                >
+                                    <LogOut size={18} />
+                                    Logout
+                                </motion.button>
+                            </>
+                        )}
                     </div>
 
                     {/* Mobile Menu Button */}

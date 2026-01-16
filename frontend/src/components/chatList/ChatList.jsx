@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Search, Users as UsersIcon, Archive, Heart, Lock } from 'lucide-react';
 import ConversationItem from './ConversationItem';
+import GroupCreateModal from './GroupCreateModal';
+import { Plus } from 'lucide-react';
 
 const ChatList = ({
   activeTab,
@@ -16,11 +18,13 @@ const ChatList = ({
   onDeleteChat,
   onRequestSetPin,
   onRequestVerifyPin,
-  currentUser, // Add currentUser prop
-  currentTheme
+  currentUser,
+  currentTheme,
+  onCreateGroup
 }) => {
+  const [openGroup, setOpenGroup] = useState(false);
   const getHeaderTitle = () => {
-    switch(activeTab) {
+    switch (activeTab) {
       case 'chats': return 'Chats';
       case 'users': return 'Users';
       case 'archive': return 'Archived';
@@ -31,7 +35,7 @@ const ChatList = ({
   };
 
   const getHeaderIcon = () => {
-    switch(activeTab) {
+    switch (activeTab) {
       case 'chats': return <UsersIcon className="w-5 h-5" />;
       case 'users': return <UsersIcon className="w-5 h-5" />;
       case 'archive': return <Archive className="w-5 h-5" />;
@@ -173,13 +177,25 @@ const ChatList = ({
     <div className="w-80 bg-gray-800 border-r border-gray-700 flex flex-col">
       {/* Header */}
       <div className="p-4 border-b border-gray-700">
-        <div className="flex items-center space-x-3 mb-4">
-          <div className="w-8 h-8 rounded-lg bg-gray-700 flex items-center justify-center">
-            {getHeaderIcon()}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 rounded-lg bg-gray-700 flex items-center justify-center">
+              {getHeaderIcon()}
+            </div>
+            <h1 className="text-xl font-bold text-white">
+              {getHeaderTitle()}
+            </h1>
           </div>
-          <h1 className="text-xl font-bold text-white">
-            {getHeaderTitle()}
-          </h1>
+
+          {activeTab === 'chats' && (
+            <button
+              onClick={() => setOpenGroup(true)}
+              className="ml-auto flex items-center gap-2 px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              New Group
+            </button>
+          )}
         </div>
 
         {(activeTab === 'chats' || activeTab === 'users') && (
@@ -214,6 +230,18 @@ const ChatList = ({
           </>
         )}
       </div>
+
+      <GroupCreateModal
+        open={openGroup}
+        onCreate={async (name, participantIds) => {
+          if (typeof onCreateGroup === 'function') {
+            await onCreateGroup(name, participantIds);
+          }
+        }}
+        onClose={() => setOpenGroup(false)}
+        users={users}
+        currentUser={currentUser}
+      />
     </div>
   );
 };
